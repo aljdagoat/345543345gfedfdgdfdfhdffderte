@@ -1,444 +1,998 @@
--- DarkUI v1.0 | minimal dark ui lib for executor envs
--- Usage: local UI = loadstring(...)() or require(...)
-
-local DarkUI = {}
-DarkUI.__index = DarkUI
+-- UILib.lua
+-- A clean GUI library. Stripped from the original script — 1:1 visual match.
+-- Usage:
+--   local UILib = loadstring(...)()
+--   local window = UILib.new("My Script")
+--   local tab = window:addTab("Combat")
+--   local section = tab:addSection("Settings")
+--   section:addToggle("Enable", false, function(val) end)
+--   section:addSlider("Speed", 1, 10, 5, function(val) end)
+--   section:addKeybind("Key", Enum.KeyCode.T, function(key) end)
+--   section:addColorPicker("Color", Color3.fromHex("AA969E"), function(col) end)
+--   window:addTab("Players") -- auto-populated with player search
 
 local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local HttpService = game:GetService("HttpService")
+local Workspace = game:GetService("Workspace")
+local CoreGui = game:GetService("CoreGui")
 
-local lp = Players.LocalPlayer
-local playerGui = lp:WaitForChild("PlayerGui")
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
 
--- theme
-local T = {
-	bg      = Color3.fromRGB(15, 15, 15),
-	surface = Color3.fromRGB(22, 22, 22),
-	border  = Color3.fromRGB(35, 35, 35),
-	tab_act = Color3.fromRGB(30, 30, 30),
-	tab_in  = Color3.fromRGB(18, 18, 18),
-	text    = Color3.fromRGB(220, 220, 220),
-	muted   = Color3.fromRGB(100, 100, 100),
-	accent  = Color3.fromRGB(100, 140, 255),
-	toggle_on  = Color3.fromRGB(80, 180, 100),
-	toggle_off = Color3.fromRGB(50, 50, 50),
-	font    = Enum.Font.GothamMedium,
-	font_sm = Enum.Font.Gotham,
+local vec2 = Vector2.new
+local dim2 = UDim2.new
+local dim = UDim.new
+local rgb = Color3.fromRGB
+local hex = Color3.fromHex
+
+-- ── Font ──────────────────────────────────────────────────────────────────────
+writefile("ffff.ttf", game:HttpGet("https://github.com/aljdagoat/345543345gfedfdgdfdfhdf/raw/refs/heads/main/fs-tahoma-8px%20(2).ttf"))
+local _tahomaDef = {
+    name = "SmallestPixel7",
+    faces = {
+        { name = "Regular", weight = 400, style = "normal", assetId = getcustomasset("ffff.ttf") }
+    }
+}
+writefile("dddd.ttf", HttpService:JSONEncode(_tahomaDef))
+local customFont = Font.new(getcustomasset("dddd.ttf"), Enum.FontWeight.Regular)
+
+-- ── Theme ─────────────────────────────────────────────────────────────────────
+local themes = {
+    preset = {
+        ["outline"]       = hex("#0A0A0A"),
+        ["inline"]        = hex("#2D2D2D"),
+        ["accent"]        = hex("#6078BE"),
+        ["high_contrast"] = hex("#141414"),
+        ["low_contrast"]  = hex("#1E1E1E"),
+        ["text"]          = hex("#B4B4B4"),
+        ["text_outline"]  = rgb(0, 0, 0),
+        ["glow"]          = hex("#6078BE"),
+    },
+    utility = {
+        ["outline"]       = { ["BackgroundColor3"] = {} },
+        ["inline"]        = { ["BackgroundColor3"] = {}, ["ImageColor3"] = {} },
+        ["accent"]        = { ["BackgroundColor3"] = {}, ["TextColor3"] = {}, ["ImageColor3"] = {}, ["ScrollBarImageColor3"] = {} },
+        ["contrast"]      = { ["Color"] = {} },
+        ["text"]          = { ["TextColor3"] = {} },
+        ["text_outline"]  = { ["Color"] = {} },
+        ["glow"]          = { ["ImageColor3"] = {} },
+        ["high_contrast"] = { ["BackgroundColor3"] = {} },
+        ["low_contrast"]  = { ["BackgroundColor3"] = {} },
+    }
 }
 
-local function tween(obj, props, t)
-	TweenService:Create(obj, TweenInfo.new(t or 0.12, Enum.EasingStyle.Quad), props):Play()
+local connections = {}
+
+-- ── Helpers ───────────────────────────────────────────────────────────────────
+local function tween(obj, properties)
+    local tw = TweenService:Create(obj, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), properties)
+    tw:Play()
+    return tw
 end
 
-local function new(class, props, parent)
-	local i = Instance.new(class)
-	for k, v in pairs(props) do i[k] = v end
-	if parent then i.Parent = parent end
-	return i
+local function applyTheme(instance, theme, property)
+    if not themes.utility[theme] then return end
+    if not themes.utility[theme][property] then return end
+    table.insert(themes.utility[theme][property], instance)
 end
 
-local function draggable(frame, handle)
-	local dragging, dragInput, dragStart, startPos
-	handle.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 then
-			dragging = true
-			dragStart = input.Position
-			startPos = frame.Position
-		end
-	end)
-	handle.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 then
-			dragging = false
-		end
-	end)
-	UserInputService.InputChanged:Connect(function(input)
-		if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-			local delta = input.Position - dragStart
-			frame.Position = UDim2.new(
-				startPos.X.Scale, startPos.X.Offset + delta.X,
-				startPos.Y.Scale, startPos.Y.Offset + delta.Y
-			)
-		end
-	end)
+local function create(instanceType, properties)
+    local instance = Instance.new(instanceType)
+    for prop, value in pairs(properties) do
+        instance[prop] = value
+    end
+    if instanceType == "TextLabel" or instanceType == "TextButton" or instanceType == "TextBox" then
+        applyTheme(instance, "text", "TextColor3")
+        local stroke = Instance.new("UIStroke")
+        stroke.Parent = instance
+        stroke.Color = themes.preset.text_outline
+        stroke.LineJoinMode = Enum.LineJoinMode.Miter
+        applyTheme(stroke, "text_outline", "Color")
+    end
+    return instance
 end
 
--- ─────────────────────────────────────────
--- Window
--- ─────────────────────────────────────────
-function DarkUI.new(title, w, h)
-	local self = setmetatable({}, DarkUI)
-	self._tabs = {}
-	self._activeTab = nil
-
-	-- screen gui
-	self._sg = new("ScreenGui", {
-		Name = "DarkUI",
-		ResetOnSpawn = false,
-		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-	}, playerGui)
-
-	-- main frame
-	self._win = new("Frame", {
-		Size = UDim2.fromOffset(w or 420, h or 340),
-		Position = UDim2.fromScale(0.5, 0.5),
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		BackgroundColor3 = T.bg,
-		BorderSizePixel = 0,
-	}, self._sg)
-	new("UICorner", { CornerRadius = UDim.new(0, 6) }, self._win)
-	new("UIStroke", { Color = T.border, Thickness = 1 }, self._win)
-
-	-- title bar
-	local bar = new("Frame", {
-		Size = UDim2.new(1, 0, 0, 36),
-		BackgroundColor3 = T.surface,
-		BorderSizePixel = 0,
-	}, self._win)
-	new("UICorner", { CornerRadius = UDim.new(0, 6) }, bar)
-	-- cover bottom corners of bar
-	new("Frame", {
-		Size = UDim2.new(1, 0, 0.5, 0),
-		Position = UDim2.fromScale(0, 0.5),
-		BackgroundColor3 = T.surface,
-		BorderSizePixel = 0,
-	}, bar)
-
-	new("TextLabel", {
-		Size = UDim2.new(1, -40, 1, 0),
-		Position = UDim2.fromOffset(12, 0),
-		BackgroundTransparency = 1,
-		Text = title or "DarkUI",
-		TextColor3 = T.text,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		Font = T.font,
-		TextSize = 13,
-	}, bar)
-
-	-- close btn
-	local close = new("TextButton", {
-		Size = UDim2.fromOffset(28, 28),
-		Position = UDim2.new(1, -34, 0.5, -14),
-		BackgroundTransparency = 1,
-		Text = "✕",
-		TextColor3 = T.muted,
-		Font = T.font,
-		TextSize = 13,
-	}, bar)
-	close.MouseButton1Click:Connect(function()
-		self._sg:Destroy()
-	end)
-	close.MouseEnter:Connect(function() tween(close, { TextColor3 = T.text }) end)
-	close.MouseLeave:Connect(function() tween(close, { TextColor3 = T.muted }) end)
-
-	draggable(self._win, bar)
-
-	-- tab row
-	self._tabRow = new("Frame", {
-		Size = UDim2.new(1, 0, 0, 32),
-		Position = UDim2.fromOffset(0, 36),
-		BackgroundColor3 = T.bg,
-		BorderSizePixel = 0,
-	}, self._win)
-	new("UIListLayout", {
-		FillDirection = Enum.FillDirection.Horizontal,
-		SortOrder = Enum.SortOrder.LayoutOrder,
-	}, self._tabRow)
-
-	-- separator line
-	new("Frame", {
-		Size = UDim2.new(1, 0, 0, 1),
-		Position = UDim2.fromOffset(0, 68),
-		BackgroundColor3 = T.border,
-		BorderSizePixel = 0,
-	}, self._win)
-
-	-- content area
-	self._content = new("Frame", {
-		Size = UDim2.new(1, -16, 1, -85),
-		Position = UDim2.fromOffset(8, 76),
-		BackgroundTransparency = 1,
-		BorderSizePixel = 0,
-		ClipsDescendants = true,
-	}, self._win)
-
-	return self
+local function updateTheme()
+    for themeName, properties in pairs(themes.utility) do
+        for propertyName, instances in pairs(properties) do
+            for _, instance in pairs(instances) do
+                if instance and instance.Parent then
+                    if themeName == "contrast" then
+                        instance[propertyName] = ColorSequence.new{
+                            ColorSequenceKeypoint.new(0, themes.preset.low_contrast),
+                            ColorSequenceKeypoint.new(1, themes.preset.high_contrast)
+                        }
+                    elseif themes.preset[themeName] then
+                        instance[propertyName] = themes.preset[themeName]
+                    end
+                end
+            end
+        end
+    end
 end
 
--- ─────────────────────────────────────────
--- Tab
--- ─────────────────────────────────────────
-function DarkUI:Tab(name)
-	local tab = {}
-	tab._elements = {}
-
-	-- tab button
-	local btn = new("TextButton", {
-		Size = UDim2.fromOffset(80, 32),
-		BackgroundColor3 = T.tab_in,
-		BorderSizePixel = 0,
-		Text = name,
-		TextColor3 = T.muted,
-		Font = T.font_sm,
-		TextSize = 12,
-		AutoButtonColor = false,
-		LayoutOrder = #self._tabs + 1,
-	}, self._tabRow)
-
-	-- bottom accent line (hidden by default)
-	local line = new("Frame", {
-		Size = UDim2.new(1, 0, 0, 2),
-		Position = UDim2.new(0, 0, 1, -2),
-		BackgroundColor3 = T.accent,
-		BorderSizePixel = 0,
-		BackgroundTransparency = 1,
-	}, btn)
-
-	-- scroll frame for tab content
-	local scroll = new("ScrollingFrame", {
-		Size = UDim2.fromScale(1, 1),
-		BackgroundTransparency = 1,
-		BorderSizePixel = 0,
-		ScrollBarThickness = 2,
-		ScrollBarImageColor3 = T.border,
-		CanvasSize = UDim2.fromScale(0, 0),
-		AutomaticCanvasSize = Enum.AutomaticSize.Y,
-		Visible = false,
-	}, self._content)
-	new("UIListLayout", {
-		Padding = UDim.new(0, 6),
-		SortOrder = Enum.SortOrder.LayoutOrder,
-	}, scroll)
-	new("UIPadding", {
-		PaddingTop = UDim.new(0, 4),
-	}, scroll)
-
-	tab._btn = btn
-	tab._line = line
-	tab._scroll = scroll
-	tab._ui = self
-
-	local function activate()
-		-- deactivate all
-		for _, t in ipairs(self._tabs) do
-			tween(t._btn, { BackgroundColor3 = T.tab_in, TextColor3 = T.muted })
-			tween(t._line, { BackgroundTransparency = 1 })
-			t._scroll.Visible = false
-		end
-		-- activate this
-		tween(btn, { BackgroundColor3 = T.tab_act, TextColor3 = T.text })
-		tween(line, { BackgroundTransparency = 0 })
-		scroll.Visible = true
-		self._activeTab = tab
-	end
-
-	btn.MouseButton1Click:Connect(activate)
-
-	table.insert(self._tabs, tab)
-	if #self._tabs == 1 then
-		task.defer(activate)
-	end
-
-	-- ── element helpers ──────────────────
-
-	local order = 0
-	local function nextOrder() order += 1 return order end
-
-	local function row(h)
-		return new("Frame", {
-			Size = UDim2.new(1, -4, 0, h or 28),
-			BackgroundTransparency = 1,
-			LayoutOrder = nextOrder(),
-		}, scroll)
-	end
-
-	-- Label
-	function tab:Label(text)
-		local r = row(20)
-		new("TextLabel", {
-			Size = UDim2.fromScale(1, 1),
-			BackgroundTransparency = 1,
-			Text = text,
-			TextColor3 = T.muted,
-			Font = T.font_sm,
-			TextSize = 11,
-			TextXAlignment = Enum.TextXAlignment.Left,
-		}, r)
-		return r
-	end
-
-	-- Button
-	function tab:Button(text, callback)
-		local r = row(30)
-		local btn2 = new("TextButton", {
-			Size = UDim2.fromScale(1, 1),
-			BackgroundColor3 = T.surface,
-			BorderSizePixel = 0,
-			Text = text,
-			TextColor3 = T.text,
-			Font = T.font_sm,
-			TextSize = 12,
-			AutoButtonColor = false,
-		}, r)
-		new("UICorner", { CornerRadius = UDim.new(0, 4) }, btn2)
-		new("UIStroke", { Color = T.border, Thickness = 1 }, btn2)
-		btn2.MouseEnter:Connect(function() tween(btn2, { BackgroundColor3 = T.tab_act }) end)
-		btn2.MouseLeave:Connect(function() tween(btn2, { BackgroundColor3 = T.surface }) end)
-		btn2.MouseButton1Click:Connect(function()
-			if callback then callback() end
-		end)
-		return btn2
-	end
-
-	-- Toggle
-	function tab:Toggle(text, default, callback)
-		local state = default or false
-		local r = row(30)
-		new("TextLabel", {
-			Size = UDim2.new(1, -50, 1, 0),
-			BackgroundTransparency = 1,
-			Text = text,
-			TextColor3 = T.text,
-			Font = T.font_sm,
-			TextSize = 12,
-			TextXAlignment = Enum.TextXAlignment.Left,
-		}, r)
-		local track = new("Frame", {
-			Size = UDim2.fromOffset(36, 18),
-			Position = UDim2.new(1, -36, 0.5, -9),
-			BackgroundColor3 = state and T.toggle_on or T.toggle_off,
-			BorderSizePixel = 0,
-		}, r)
-		new("UICorner", { CornerRadius = UDim.new(1, 0) }, track)
-		local knob = new("Frame", {
-			Size = UDim2.fromOffset(12, 12),
-			Position = state and UDim2.fromOffset(21, 3) or UDim2.fromOffset(3, 3),
-			BackgroundColor3 = T.text,
-			BorderSizePixel = 0,
-		}, track)
-		new("UICorner", { CornerRadius = UDim.new(1, 0) }, knob)
-
-		local hitbox = new("TextButton", {
-			Size = UDim2.fromScale(1, 1),
-			BackgroundTransparency = 1,
-			Text = "",
-		}, r)
-		hitbox.MouseButton1Click:Connect(function()
-			state = not state
-			tween(track, { BackgroundColor3 = state and T.toggle_on or T.toggle_off })
-			tween(knob, { Position = state and UDim2.fromOffset(21, 3) or UDim2.fromOffset(3, 3) })
-			if callback then callback(state) end
-		end)
-		return { GetState = function() return state end }
-	end
-
-	-- Slider
-	function tab:Slider(text, min, max, default, callback)
-		min, max = min or 0, max or 100
-		local val = math.clamp(default or min, min, max)
-		local r = row(42)
-
-		local header = new("Frame", { Size = UDim2.new(1, 0, 0, 18), BackgroundTransparency = 1 }, r)
-		new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal }, header)
-		new("TextLabel", {
-			Size = UDim2.new(1, -40, 1, 0),
-			BackgroundTransparency = 1,
-			Text = text,
-			TextColor3 = T.text,
-			Font = T.font_sm,
-			TextSize = 12,
-			TextXAlignment = Enum.TextXAlignment.Left,
-		}, header)
-		local valLabel = new("TextLabel", {
-			Size = UDim2.fromOffset(40, 18),
-			BackgroundTransparency = 1,
-			Text = tostring(val),
-			TextColor3 = T.accent,
-			Font = T.font_sm,
-			TextSize = 12,
-			TextXAlignment = Enum.TextXAlignment.Right,
-		}, header)
-
-		local track = new("Frame", {
-			Size = UDim2.new(1, 0, 0, 4),
-			Position = UDim2.fromOffset(0, 26),
-			BackgroundColor3 = T.border,
-			BorderSizePixel = 0,
-		}, r)
-		new("UICorner", { CornerRadius = UDim.new(1, 0) }, track)
-		local fill = new("Frame", {
-			Size = UDim2.fromScale((val - min) / (max - min), 1),
-			BackgroundColor3 = T.accent,
-			BorderSizePixel = 0,
-		}, track)
-		new("UICorner", { CornerRadius = UDim.new(1, 0) }, fill)
-
-		local dragging2 = false
-		local function update(x)
-			local abs = track.AbsolutePosition.X
-			local w2 = track.AbsoluteSize.X
-			local pct = math.clamp((x - abs) / w2, 0, 1)
-			val = math.floor(min + pct * (max - min) + 0.5)
-			valLabel.Text = tostring(val)
-			tween(fill, { Size = UDim2.fromScale(pct, 1) }, 0.05)
-			if callback then callback(val) end
-		end
-
-		track.InputBegan:Connect(function(i)
-			if i.UserInputType == Enum.UserInputType.MouseButton1 then
-				dragging2 = true
-				update(i.Position.X)
-			end
-		end)
-		UserInputService.InputEnded:Connect(function(i)
-			if i.UserInputType == Enum.UserInputType.MouseButton1 then dragging2 = false end
-		end)
-		UserInputService.InputChanged:Connect(function(i)
-			if dragging2 and i.UserInputType == Enum.UserInputType.MouseMovement then
-				update(i.Position.X)
-			end
-		end)
-		return { GetValue = function() return val end }
-	end
-
-	-- TextBox
-	function tab:Input(placeholder, callback)
-		local r = row(30)
-		local box = new("TextBox", {
-			Size = UDim2.fromScale(1, 1),
-			BackgroundColor3 = T.surface,
-			BorderSizePixel = 0,
-			Text = "",
-			PlaceholderText = placeholder or "Input...",
-			PlaceholderColor3 = T.muted,
-			TextColor3 = T.text,
-			Font = T.font_sm,
-			TextSize = 12,
-			ClearTextOnFocus = false,
-		}, r)
-		new("UICorner", { CornerRadius = UDim.new(0, 4) }, box)
-		new("UIStroke", { Color = T.border, Thickness = 1 }, box)
-		new("UIPadding", { PaddingLeft = UDim.new(0, 8) }, box)
-		box.FocusLost:Connect(function(enter)
-			if enter and callback then callback(box.Text) end
-		end)
-		return box
-	end
-
-	-- Separator
-	function tab:Separator()
-		local r = row(1)
-		r.BackgroundColor3 = T.border
-		r.BackgroundTransparency = 0
-		return r
-	end
-
-	return tab
+local function makeDraggable(frame)
+    local dragging, startPos, startFramePos = false, nil, nil
+    frame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            startPos = input.Position
+            startFramePos = frame.Position
+        end
+    end)
+    frame.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    local c = UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local vp = Camera.ViewportSize
+            frame.Position = dim2(
+                0, math.clamp(startFramePos.X.Offset + (input.Position.X - startPos.X), 0, vp.X - frame.Size.X.Offset),
+                0, math.clamp(startFramePos.Y.Offset + (input.Position.Y - startPos.Y), 0, vp.Y - frame.Size.Y.Offset)
+            )
+        end
+    end)
+    table.insert(connections, c)
 end
 
--- Destroy
-function DarkUI:Destroy()
-	self._sg:Destroy()
+local function makeResizable(frame)
+    local resizeFrame = Instance.new("TextButton")
+    resizeFrame.Position = dim2(1, -10, 1, -10)
+    resizeFrame.Size = dim2(0, 10, 0, 10)
+    resizeFrame.BackgroundTransparency = 1
+    resizeFrame.Text = ""
+    resizeFrame.Parent = frame
+
+    local resizing, startSize, startPos = false, nil, nil
+    local originalSize = frame.Size
+
+    resizeFrame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            resizing = true
+            startPos = input.Position
+            startSize = frame.Size
+        end
+    end)
+    resizeFrame.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            resizing = false
+        end
+    end)
+    local c = UserInputService.InputChanged:Connect(function(input)
+        if resizing and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local vp = Camera.ViewportSize
+            frame.Size = dim2(
+                startSize.X.Scale, math.clamp(startSize.X.Offset + (input.Position.X - startPos.X), originalSize.X.Offset, vp.X),
+                startSize.Y.Scale, math.clamp(startSize.Y.Offset + (input.Position.Y - startPos.Y), originalSize.Y.Offset, vp.Y)
+            )
+        end
+    end)
+    table.insert(connections, c)
 end
 
-return DarkUI
+-- ── Component builders (private) ──────────────────────────────────────────────
+local function _makeSection(parent, title, order)
+    local section = create("Frame", {
+        Parent = parent, Name = title:gsub(" ", "_"),
+        Size = dim2(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundTransparency = 1, BorderSizePixel = 0, LayoutOrder = order
+    })
+    local sectionTitle = create("TextLabel", {
+        Parent = section, FontFace = customFont, Text = title,
+        TextColor3 = themes.preset.accent, BackgroundTransparency = 1,
+        Size = dim2(1, 0, 0, 16), TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left
+    })
+    applyTheme(sectionTitle, "accent", "TextColor3")
+    local content = create("Frame", {
+        Parent = section, Name = "content", Position = dim2(0, 0, 0, 18),
+        Size = dim2(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundTransparency = 1, BorderSizePixel = 0
+    })
+    create("UIListLayout", { Parent = content, Padding = dim(0, 4), SortOrder = Enum.SortOrder.LayoutOrder })
+    return content
+end
+
+local function _makeToggle(parent, label, defaultValue, callback, order)
+    local toggleFrame = create("Frame", {
+        Parent = parent, Name = label:gsub(" ", "_"),
+        Size = dim2(1, 0, 0, 20), BackgroundTransparency = 1,
+        BorderSizePixel = 0, LayoutOrder = order or 0
+    })
+    create("TextLabel", {
+        Parent = toggleFrame, FontFace = customFont, Text = label,
+        TextColor3 = themes.preset.text, BackgroundTransparency = 1,
+        Size = dim2(1, -25, 1, 0), TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left
+    })
+    local toggleButton = create("TextButton", {
+        Parent = toggleFrame, Name = "toggle",
+        Position = dim2(1, -20, 0, 0), Size = dim2(0, 20, 0, 20),
+        BackgroundColor3 = defaultValue and themes.preset.accent or themes.preset.inline,
+        BorderSizePixel = 0, Text = "", AutoButtonColor = false
+    })
+    if defaultValue then applyTheme(toggleButton, "accent", "BackgroundColor3")
+    else applyTheme(toggleButton, "inline", "BackgroundColor3") end
+
+    local isEnabled = defaultValue
+    toggleButton.MouseButton1Click:Connect(function()
+        isEnabled = not isEnabled
+        tween(toggleButton, { BackgroundColor3 = isEnabled and themes.preset.accent or themes.preset.inline })
+        if callback then callback(isEnabled) end
+    end)
+    return toggleFrame, function() return isEnabled end
+end
+
+local function _makeSlider(parent, label, min, max, default, callback, order)
+    local sliderFrame = create("Frame", {
+        Parent = parent, Name = label:gsub(" ", "_"),
+        Size = dim2(1, 0, 0, 35), BackgroundTransparency = 1,
+        BorderSizePixel = 0, LayoutOrder = order or 0
+    })
+    local sliderLabel = create("TextLabel", {
+        Parent = sliderFrame, FontFace = customFont,
+        Text = label .. ": " .. tostring(default),
+        TextColor3 = themes.preset.text, BackgroundTransparency = 1,
+        Size = dim2(1, 0, 0, 12), TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left
+    })
+    local sliderBg = create("Frame", {
+        Parent = sliderFrame, Position = dim2(0, 0, 0, 15),
+        Size = dim2(1, 0, 0, 15), BackgroundColor3 = themes.preset.inline, BorderSizePixel = 0
+    })
+    applyTheme(sliderBg, "inline", "BackgroundColor3")
+    local sliderFill = create("Frame", {
+        Parent = sliderBg, Size = dim2((default - min) / (max - min), 0, 1, 0),
+        BackgroundColor3 = themes.preset.accent, BorderSizePixel = 0
+    })
+    applyTheme(sliderFill, "accent", "BackgroundColor3")
+
+    local currentValue = default
+    local dragging = false
+    local function updateSlider(input)
+        local relativeX = math.clamp((input.Position.X - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1)
+        currentValue = min + (max - min) * relativeX
+        sliderFill.Size = dim2(relativeX, 0, 1, 0)
+        sliderLabel.Text = label .. ": " .. string.format("%.1f", currentValue)
+        if callback then callback(currentValue) end
+    end
+    sliderBg.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true; updateSlider(input)
+        end
+    end)
+    sliderBg.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            updateSlider(input)
+        end
+    end)
+    return sliderFrame, function() return currentValue end
+end
+
+local function _makeKeybind(parent, label, defaultKey, callback, order)
+    local keybindFrame = create("Frame", {
+        Parent = parent, Name = label:gsub(" ", "_"),
+        Size = dim2(1, 0, 0, 25), BackgroundTransparency = 1,
+        BorderSizePixel = 0, LayoutOrder = order or 0
+    })
+    create("TextLabel", {
+        Parent = keybindFrame, FontFace = customFont, Text = label,
+        TextColor3 = themes.preset.text, BackgroundTransparency = 1,
+        Size = dim2(1, -80, 1, 0), TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left
+    })
+    local keybindButton = create("TextButton", {
+        Parent = keybindFrame, FontFace = customFont,
+        Position = dim2(1, -75, 0, 0), Size = dim2(0, 75, 1, 0),
+        BackgroundColor3 = themes.preset.inline, BorderSizePixel = 0,
+        Text = defaultKey.Name, TextColor3 = themes.preset.text,
+        TextSize = 12, AutoButtonColor = false
+    })
+    applyTheme(keybindButton, "inline", "BackgroundColor3")
+
+    local currentKey = defaultKey
+    local listening = false
+    keybindButton.MouseButton1Click:Connect(function()
+        if listening then return end
+        listening = true
+        keybindButton.Text = "..."
+        local c
+        c = UserInputService.InputBegan:Connect(function(input, processed)
+            if processed then return end
+            if input.UserInputType == Enum.UserInputType.Keyboard then
+                currentKey = input.KeyCode
+                keybindButton.Text = input.KeyCode.Name
+                listening = false
+                c:Disconnect()
+                if callback then callback(currentKey) end
+            end
+        end)
+    end)
+    return keybindFrame, function() return currentKey end
+end
+
+local function _makeColorPicker(parent, label, defaultColor, callback, order)
+    local pickerFrame = create("Frame", {
+        Parent = parent, Name = label:gsub(" ", "_"),
+        Size = dim2(1, 0, 0, 25), BackgroundTransparency = 1,
+        BorderSizePixel = 0, LayoutOrder = order or 0
+    })
+    create("TextLabel", {
+        Parent = pickerFrame, FontFace = customFont, Text = label,
+        TextColor3 = themes.preset.text, BackgroundTransparency = 1,
+        Size = dim2(1, -130, 1, 0), TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left
+    })
+    local colorPreview = create("Frame", {
+        Parent = pickerFrame, Position = dim2(1, -125, 0, 2),
+        Size = dim2(0, 20, 0, 20), BackgroundColor3 = defaultColor, BorderSizePixel = 0
+    })
+    local hexInput = create("TextBox", {
+        Parent = pickerFrame, FontFace = customFont,
+        Position = dim2(1, -100, 0, 0), Size = dim2(0, 95, 1, 0),
+        BackgroundColor3 = themes.preset.inline, BorderSizePixel = 0,
+        Text = "#" .. defaultColor:ToHex(), TextColor3 = themes.preset.text,
+        TextSize = 12, ClearTextOnFocus = false
+    })
+    applyTheme(hexInput, "inline", "BackgroundColor3")
+
+    local currentColor = defaultColor
+    hexInput.FocusLost:Connect(function()
+        local text = hexInput.Text:gsub("#", "")
+        if #text == 6 and text:match("^%x+$") then
+            currentColor = hex("#" .. text)
+            colorPreview.BackgroundColor3 = currentColor
+            hexInput.Text = "#" .. text:upper()
+            if callback then callback(currentColor) end
+        else
+            hexInput.Text = "#" .. currentColor:ToHex()
+        end
+    end)
+    return pickerFrame, function() return currentColor end
+end
+
+-- ── Theme tab color picker (the bordered, full-row ones) ───────────────────────
+local function _makeThemeColorPicker(parent, name, themeKey, order)
+    local pickerOutline = create("Frame", {
+        Parent = parent, Name = name .. "_picker",
+        Size = dim2(1, 0, 0, 40), BorderSizePixel = 0,
+        BackgroundColor3 = themes.preset.outline, LayoutOrder = order
+    })
+    applyTheme(pickerOutline, "outline", "BackgroundColor3")
+    local pickerInline = create("Frame", {
+        Parent = pickerOutline, Position = dim2(0, 1, 0, 1),
+        Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
+        BackgroundColor3 = themes.preset.inline
+    })
+    applyTheme(pickerInline, "inline", "BackgroundColor3")
+    local pickerHolder = create("Frame", {
+        Parent = pickerInline, Position = dim2(0, 1, 0, 1),
+        Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
+        BackgroundColor3 = rgb(255, 255, 255)
+    })
+    local pickerGradient = create("UIGradient", {
+        Parent = pickerHolder, Rotation = 90,
+        Color = ColorSequence.new{
+            ColorSequenceKeypoint.new(0, themes.preset.low_contrast),
+            ColorSequenceKeypoint.new(1, themes.preset.high_contrast)
+        }
+    })
+    applyTheme(pickerGradient, "contrast", "Color")
+    create("UIPadding", { Parent = pickerHolder,
+        PaddingLeft = dim(0, 5), PaddingRight = dim(0, 5),
+        PaddingTop = dim(0, 5), PaddingBottom = dim(0, 5)
+    })
+    create("TextLabel", {
+        Parent = pickerHolder, FontFace = customFont, Text = name,
+        TextColor3 = themes.preset.text, BackgroundTransparency = 1,
+        Position = dim2(0, 0, 0, 0), Size = dim2(0, 80, 1, 0),
+        TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left
+    })
+
+    -- Preview swatch
+    local previewOutline = create("Frame", {
+        Parent = pickerHolder, Position = dim2(0, 85, 0, 0),
+        Size = dim2(0, 30, 1, 0), BackgroundColor3 = themes.preset.outline, BorderSizePixel = 0
+    })
+    applyTheme(previewOutline, "outline", "BackgroundColor3")
+    local previewInline = create("Frame", {
+        Parent = previewOutline, Position = dim2(0, 1, 0, 1),
+        Size = dim2(1, -2, 1, -2), BackgroundColor3 = themes.preset.inline, BorderSizePixel = 0
+    })
+    applyTheme(previewInline, "inline", "BackgroundColor3")
+    local preview = create("Frame", {
+        Parent = previewInline, Position = dim2(0, 1, 0, 1),
+        Size = dim2(1, -2, 1, -2), BackgroundColor3 = themes.preset[themeKey], BorderSizePixel = 0
+    })
+
+    -- Hex input
+    local inputOutline = create("Frame", {
+        Parent = pickerHolder, Position = dim2(0, 120, 0, 0),
+        Size = dim2(1, -120, 1, 0), BackgroundColor3 = themes.preset.outline, BorderSizePixel = 0
+    })
+    applyTheme(inputOutline, "outline", "BackgroundColor3")
+    local inputInline = create("Frame", {
+        Parent = inputOutline, Position = dim2(0, 1, 0, 1),
+        Size = dim2(1, -2, 1, -2), BackgroundColor3 = themes.preset.inline, BorderSizePixel = 0
+    })
+    applyTheme(inputInline, "inline", "BackgroundColor3")
+    local inputHolder = create("Frame", {
+        Parent = inputInline, Position = dim2(0, 1, 0, 1),
+        Size = dim2(1, -2, 1, -2), BackgroundColor3 = rgb(255, 255, 255), BorderSizePixel = 0
+    })
+    local inputGradient = create("UIGradient", {
+        Parent = inputHolder, Rotation = 90,
+        Color = ColorSequence.new{
+            ColorSequenceKeypoint.new(0, themes.preset.low_contrast),
+            ColorSequenceKeypoint.new(1, themes.preset.high_contrast)
+        }
+    })
+    applyTheme(inputGradient, "contrast", "Color")
+    local hexInput = create("TextBox", {
+        Parent = inputHolder, FontFace = customFont,
+        TextColor3 = themes.preset.text,
+        Text = "#" .. themes.preset[themeKey]:ToHex(),
+        PlaceholderText = "#RRGGBB", BackgroundTransparency = 1,
+        Size = dim2(1, -4, 1, 0), Position = dim2(0, 2, 0, 0),
+        TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left,
+        ClearTextOnFocus = false, BorderSizePixel = 0
+    })
+    hexInput.FocusLost:Connect(function()
+        local text = hexInput.Text:gsub("#", "")
+        if #text == 6 and text:match("^%x+$") then
+            local newColor = hex("#" .. text)
+            themes.preset[themeKey] = newColor
+            preview.BackgroundColor3 = newColor
+            hexInput.Text = "#" .. text:upper()
+            updateTheme()
+        else
+            hexInput.Text = "#" .. themes.preset[themeKey]:ToHex()
+        end
+    end)
+    return pickerOutline
+end
+
+-- ── Scrollable tab content scaffold ───────────────────────────────────────────
+local function _makeScrollContent(parent)
+    local content = create("Frame", {
+        Parent = parent, Size = dim2(1, 0, 1, 0),
+        BackgroundTransparency = 1, BorderSizePixel = 0, Visible = false
+    })
+    local scroll = create("ScrollingFrame", {
+        Parent = content, ScrollBarImageColor3 = themes.preset.accent,
+        Active = true, AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        ScrollBarThickness = 2,
+        MidImage = "rbxassetid://103468666327206",
+        TopImage = "rbxassetid://103468666327206",
+        BottomImage = "rbxassetid://103468666327206",
+        Size = dim2(1, 0, 1, 0), BackgroundTransparency = 1,
+        BackgroundColor3 = rgb(255, 255, 255),
+        BorderColor3 = rgb(0, 0, 0), BorderSizePixel = 0,
+        CanvasSize = dim2(0, 0, 0, 0)
+    })
+    applyTheme(scroll, "accent", "ScrollBarImageColor3")
+    local container = create("Frame", {
+        Parent = scroll, Size = dim2(1, 0, 1, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundTransparency = 1, BorderSizePixel = 0
+    })
+    create("UIListLayout", {
+        Parent = container, Padding = dim(0, 8),
+        HorizontalAlignment = Enum.HorizontalAlignment.Center,
+        SortOrder = Enum.SortOrder.LayoutOrder
+    })
+    create("UIPadding", {
+        Parent = container, PaddingTop = dim(0, 5), PaddingBottom = dim(0, 5),
+        PaddingLeft = dim(0, 5), PaddingRight = dim(0, 5)
+    })
+    return content, container
+end
+
+-- ── Players tab builder ────────────────────────────────────────────────────────
+local function _buildPlayersTab(parent)
+    local playersContent = create("Frame", {
+        Parent = parent, Size = dim2(1, 0, 1, 0),
+        BackgroundTransparency = 1, BorderSizePixel = 0, Visible = false
+    })
+
+    -- Scroll list (sits above the search bar)
+    local scrollFrame = create("ScrollingFrame", {
+        Parent = playersContent, ScrollBarImageColor3 = themes.preset.accent,
+        Active = true, AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        ScrollBarThickness = 2,
+        MidImage = "rbxassetid://103468666327206",
+        TopImage = "rbxassetid://103468666327206",
+        BottomImage = "rbxassetid://103468666327206",
+        Size = dim2(1, 0, 1, -30),
+        BackgroundTransparency = 1, BackgroundColor3 = rgb(255, 255, 255),
+        BorderColor3 = rgb(0, 0, 0), BorderSizePixel = 0,
+        CanvasSize = dim2(0, 0, 0, 0),
+        ScrollingEnabled = true, ClipsDescendants = true
+    })
+    applyTheme(scrollFrame, "accent", "ScrollBarImageColor3")
+
+    local playerListContainer = create("Frame", {
+        Parent = scrollFrame, Name = "player_list",
+        Size = dim2(1, 0, 1, 0), AutomaticSize = Enum.AutomaticSize.Y,
+        BorderSizePixel = 0, BackgroundTransparency = 1, BackgroundColor3 = rgb(255, 255, 255)
+    })
+    create("UIListLayout", {
+        Parent = playerListContainer, Padding = dim(0, 4),
+        HorizontalAlignment = Enum.HorizontalAlignment.Center,
+        SortOrder = Enum.SortOrder.LayoutOrder
+    })
+    create("UIPadding", {
+        Parent = playerListContainer,
+        PaddingBottom = dim(0, 5), PaddingTop = dim(0, 5),
+        PaddingLeft = dim(0, 5), PaddingRight = dim(0, 5)
+    })
+
+    -- Search bar
+    local searchSection = create("Frame", {
+        Parent = playersContent, Name = "search_section",
+        Position = dim2(0, 0, 1, -25), Size = dim2(1, 0, 0, 25),
+        BorderSizePixel = 0, BackgroundTransparency = 1, BackgroundColor3 = rgb(255, 255, 255)
+    })
+    create("UIPadding", {
+        Parent = searchSection,
+        PaddingBottom = dim(0, 5), PaddingTop = dim(0, 5),
+        PaddingLeft = dim(0, 5), PaddingRight = dim(0, 5)
+    })
+    local searchOutline = create("Frame", {
+        Parent = searchSection, Size = dim2(1, 0, 0, 15),
+        BorderSizePixel = 0, BackgroundColor3 = themes.preset.outline
+    })
+    applyTheme(searchOutline, "outline", "BackgroundColor3")
+    local searchInline = create("Frame", {
+        Parent = searchOutline, Position = dim2(0, 1, 0, 1),
+        Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
+        BackgroundColor3 = themes.preset.inline
+    })
+    applyTheme(searchInline, "inline", "BackgroundColor3")
+    local searchHolder = create("Frame", {
+        Parent = searchInline, Position = dim2(0, 1, 0, 1),
+        Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
+        BackgroundColor3 = rgb(255, 255, 255)
+    })
+    local searchGradient = create("UIGradient", {
+        Parent = searchHolder, Rotation = 90,
+        Color = ColorSequence.new{
+            ColorSequenceKeypoint.new(0, themes.preset.low_contrast),
+            ColorSequenceKeypoint.new(1, themes.preset.high_contrast)
+        }
+    })
+    applyTheme(searchGradient, "contrast", "Color")
+    local searchBox = create("TextBox", {
+        Parent = searchHolder, FontFace = customFont,
+        TextColor3 = themes.preset.text, Text = "",
+        PlaceholderText = "Search players...",
+        PlaceholderColor3 = rgb(100, 100, 100),
+        BackgroundTransparency = 1,
+        Size = dim2(1, -4, 1, 0), Position = dim2(0, 2, 0, -1),
+        BorderSizePixel = 0, TextXAlignment = Enum.TextXAlignment.Left,
+        TextSize = 12, ClearTextOnFocus = false, BackgroundColor3 = rgb(255, 255, 255)
+    })
+
+    -- Player entry builder
+    local function createPlayerEntry(player)
+        local entryOutline = create("Frame", {
+            Parent = playerListContainer, Name = player.Name,
+            Size = dim2(1, 0, 0, 50), BorderSizePixel = 0,
+            BackgroundColor3 = themes.preset.outline
+        })
+        applyTheme(entryOutline, "outline", "BackgroundColor3")
+        local entryInline = create("Frame", {
+            Parent = entryOutline, Position = dim2(0, 1, 0, 1),
+            Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
+            BackgroundColor3 = themes.preset.inline
+        })
+        applyTheme(entryInline, "inline", "BackgroundColor3")
+        local entryHolder = create("Frame", {
+            Parent = entryInline, Position = dim2(0, 1, 0, 1),
+            Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
+            BackgroundColor3 = rgb(255, 255, 255)
+        })
+        local entryGradient = create("UIGradient", {
+            Parent = entryHolder, Rotation = 90,
+            Color = ColorSequence.new{
+                ColorSequenceKeypoint.new(0, themes.preset.low_contrast),
+                ColorSequenceKeypoint.new(1, themes.preset.high_contrast)
+            }
+        })
+        applyTheme(entryGradient, "contrast", "Color")
+        local hoverOverlay = create("Frame", {
+            Parent = entryHolder, Size = dim2(1, 0, 1, 0),
+            BackgroundColor3 = rgb(0, 0, 0), BackgroundTransparency = 1,
+            BorderSizePixel = 0, ZIndex = 2
+        })
+
+        -- Avatar
+        local avatarOutline = create("Frame", {
+            Parent = entryHolder, Position = dim2(0, 5, 0.5, -20),
+            Size = dim2(0, 40, 0, 40), BorderSizePixel = 0,
+            BackgroundColor3 = themes.preset.outline, ZIndex = 3
+        })
+        applyTheme(avatarOutline, "outline", "BackgroundColor3")
+        local avatarInline = create("Frame", {
+            Parent = avatarOutline, Position = dim2(0, 1, 0, 1),
+            Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
+            BackgroundColor3 = themes.preset.inline, ZIndex = 3
+        })
+        applyTheme(avatarInline, "inline", "BackgroundColor3")
+        local avatar = create("ImageLabel", {
+            Parent = avatarInline, Position = dim2(0, 1, 0, 1),
+            Size = dim2(1, -2, 1, -2), BackgroundTransparency = 1,
+            BorderSizePixel = 0, BackgroundColor3 = rgb(255, 255, 255), ZIndex = 3
+        })
+        task.spawn(function()
+            local ok, img = pcall(function()
+                return Players:GetUserThumbnailAsync(player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
+            end)
+            if ok then avatar.Image = img end
+        end)
+
+        -- Text
+        create("TextLabel", {
+            Parent = entryHolder, FontFace = customFont,
+            TextColor3 = themes.preset.text, Text = player.DisplayName,
+            BackgroundTransparency = 1, Position = dim2(0, 50, 0, 8),
+            Size = dim2(1, -55, 0, 14), BorderSizePixel = 0,
+            TextXAlignment = Enum.TextXAlignment.Left, TextSize = 12,
+            TextTruncate = Enum.TextTruncate.AtEnd,
+            BackgroundColor3 = rgb(255, 255, 255), ZIndex = 3
+        })
+        create("TextLabel", {
+            Parent = entryHolder, FontFace = customFont,
+            TextColor3 = themes.preset.text, Text = "@" .. player.Name,
+            BackgroundTransparency = 1, Position = dim2(0, 50, 0, 24),
+            Size = dim2(1, -55, 0, 12), BorderSizePixel = 0,
+            TextXAlignment = Enum.TextXAlignment.Left, TextSize = 10,
+            TextTransparency = 0.3, TextTruncate = Enum.TextTruncate.AtEnd,
+            BackgroundColor3 = rgb(255, 255, 255), ZIndex = 3
+        })
+
+        -- Click overlay for hover effect
+        local clickButton = create("TextButton", {
+            Parent = entryHolder, Size = dim2(1, 0, 1, 0),
+            BackgroundTransparency = 1, Text = "",
+            BorderSizePixel = 0, AutoButtonColor = false, ZIndex = 4
+        })
+        clickButton.MouseEnter:Connect(function()
+            tween(hoverOverlay, { BackgroundTransparency = 0.7 })
+        end)
+        clickButton.MouseLeave:Connect(function()
+            tween(hoverOverlay, { BackgroundTransparency = 1 })
+        end)
+
+        return entryOutline
+    end
+
+    local function updatePlayerList(searchTerm)
+        searchTerm = searchTerm and searchTerm:lower() or ""
+        for _, child in ipairs(playerListContainer:GetChildren()) do
+            if child:IsA("Frame") then child:Destroy() end
+        end
+        for _, player in ipairs(Players:GetPlayers()) do
+            local dn = player.DisplayName:lower()
+            local un = player.Name:lower()
+            if searchTerm == "" or dn:find(searchTerm, 1, true) or un:find(searchTerm, 1, true) then
+                createPlayerEntry(player)
+            end
+        end
+    end
+
+    updatePlayerList()
+    searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+        updatePlayerList(searchBox.Text)
+    end)
+    Players.PlayerAdded:Connect(function()
+        task.wait(0.5); updatePlayerList(searchBox.Text)
+    end)
+    Players.PlayerRemoving:Connect(function()
+        task.wait(0.1); updatePlayerList(searchBox.Text)
+    end)
+
+    return playersContent
+end
+
+-- ── Section API object ─────────────────────────────────────────────────────────
+local SectionAPI = {}
+SectionAPI.__index = SectionAPI
+
+function SectionAPI:addToggle(label, default, callback)
+    local _, getter = _makeToggle(self._container, label, default, callback, self._order)
+    self._order = self._order + 1
+    return getter
+end
+
+function SectionAPI:addSlider(label, min, max, default, callback)
+    local _, getter = _makeSlider(self._container, label, min, max, default, callback, self._order)
+    self._order = self._order + 1
+    return getter
+end
+
+function SectionAPI:addKeybind(label, defaultKey, callback)
+    local _, getter = _makeKeybind(self._container, label, defaultKey, callback, self._order)
+    self._order = self._order + 1
+    return getter
+end
+
+function SectionAPI:addColorPicker(label, defaultColor, callback)
+    local _, getter = _makeColorPicker(self._container, label, defaultColor, callback, self._order)
+    self._order = self._order + 1
+    return getter
+end
+
+-- ── Tab API object ─────────────────────────────────────────────────────────────
+local TabAPI = {}
+TabAPI.__index = TabAPI
+
+function TabAPI:addSection(title)
+    local content = _makeSection(self._container, title, self._sectionOrder)
+    self._sectionOrder = self._sectionOrder + 1
+    return setmetatable({ _container = content, _order = 1 }, SectionAPI)
+end
+
+-- ── Window / library API ───────────────────────────────────────────────────────
+local WindowAPI = {}
+WindowAPI.__index = WindowAPI
+
+function WindowAPI:addTab(name)
+    -- Special handling for Players tab
+    if name == "Players" then
+        local content = _buildPlayersTab(self._contentHolder)
+        local btn, indicator = self._createTabBtn(name, self._tabOrder)
+        self._tabOrder = self._tabOrder + 1
+        self._tabs[name] = { button = btn, indicator = indicator, content = content }
+        btn.MouseButton1Click:Connect(function() self:_switchTab(name) end)
+        return nil -- Players tab manages itself
+    end
+
+    -- Generic scrollable tab
+    local content, container = _makeScrollContent(self._contentHolder)
+    local btn, indicator = self._createTabBtn(name, self._tabOrder)
+    self._tabOrder = self._tabOrder + 1
+    self._tabs[name] = { button = btn, indicator = indicator, content = content }
+    btn.MouseButton1Click:Connect(function() self:_switchTab(name) end)
+
+    local tab = setmetatable({ _container = container, _sectionOrder = 1 }, TabAPI)
+    return tab
+end
+
+function WindowAPI:_switchTab(tabName)
+    for name, data in pairs(self._tabs) do
+        data.indicator.Visible = (name == tabName)
+        data.content.Visible  = (name == tabName)
+        if name == tabName then
+            tween(data.button, { TextColor3 = themes.preset.accent })
+        else
+            tween(data.button, { TextColor3 = themes.preset.text })
+        end
+    end
+end
+
+function WindowAPI:destroy()
+    self._screenGui:Destroy()
+    for _, c in pairs(connections) do c:Disconnect() end
+    connections = {}
+end
+
+-- ── Library entry point ────────────────────────────────────────────────────────
+local UILib = {}
+
+function UILib.new(title)
+    local screenGui = create("ScreenGui", {
+        Name = "UILib_" .. title,
+        Parent = CoreGui,
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    })
+
+    local mainFrame = create("Frame", {
+        Parent = screenGui, Name = "MainFrame",
+        AnchorPoint = vec2(0, 0),
+        Size = dim2(0, 394, 0, 464),
+        Position = dim2(0, 100, 0, 100),
+        Active = true, BorderColor3 = rgb(0, 0, 0),
+        BorderSizePixel = 0, BackgroundColor3 = themes.preset.outline
+    })
+    makeDraggable(mainFrame)
+    makeResizable(mainFrame)
+    applyTheme(mainFrame, "outline", "BackgroundColor3")
+
+    local windowInline = create("Frame", {
+        Parent = mainFrame, Name = "window_inline",
+        Position = dim2(0, 1, 0, 1), Size = dim2(1, -2, 1, -2),
+        BorderSizePixel = 0, BackgroundColor3 = themes.preset.accent
+    })
+    applyTheme(windowInline, "accent", "BackgroundColor3")
+
+    local windowHolder = create("Frame", {
+        Parent = windowInline, Name = "window_holder",
+        Position = dim2(0, 1, 0, 1), Size = dim2(1, -2, 1, -2),
+        BorderSizePixel = 0, BackgroundColor3 = rgb(255, 255, 255)
+    })
+    local windowGradient = create("UIGradient", {
+        Parent = windowHolder, Rotation = 90,
+        Color = ColorSequence.new{
+            ColorSequenceKeypoint.new(0, themes.preset.low_contrast),
+            ColorSequenceKeypoint.new(1, themes.preset.high_contrast)
+        }
+    })
+    applyTheme(windowGradient, "contrast", "Color")
+
+    local titleText = create("TextLabel", {
+        Parent = windowHolder, FontFace = customFont,
+        TextColor3 = themes.preset.accent, Text = title,
+        BackgroundTransparency = 1, Position = dim2(0, 2, 0, 4),
+        BorderSizePixel = 0, AutomaticSize = Enum.AutomaticSize.XY,
+        TextSize = 12, BackgroundColor3 = rgb(255, 255, 255)
+    })
+    applyTheme(titleText, "accent", "TextColor3")
+
+    local closeButton = create("TextButton", {
+        Parent = windowHolder, FontFace = customFont, Name = "close",
+        AnchorPoint = vec2(1, 0), Active = false, Text = "X",
+        Size = dim2(0, 0, 0, 0), Selectable = false,
+        Position = dim2(1, -7, 0, 5), BorderSizePixel = 0,
+        BackgroundTransparency = 1, TextXAlignment = Enum.TextXAlignment.Right,
+        AutomaticSize = Enum.AutomaticSize.XY, TextColor3 = themes.preset.text,
+        TextSize = 12, ZIndex = 100, BackgroundColor3 = rgb(255, 255, 255)
+    })
+    closeButton.MouseButton1Click:Connect(function()
+        screenGui.Enabled = false
+    end)
+
+    create("UIPadding", {
+        Parent = windowHolder, PaddingBottom = dim(0, 4),
+        PaddingRight = dim(0, 4), PaddingLeft = dim(0, 4)
+    })
+
+    -- Tab bar
+    local tabBarOutline = create("Frame", {
+        Parent = windowHolder, Name = "tab_bar_outline",
+        Position = dim2(0, 0, 0, 18), Size = dim2(1, 0, 0, 20),
+        BorderSizePixel = 0, BackgroundColor3 = themes.preset.inline
+    })
+    applyTheme(tabBarOutline, "inline", "BackgroundColor3")
+    local tabBarInline = create("Frame", {
+        Parent = tabBarOutline, Position = dim2(0, 1, 0, 1),
+        Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
+        BackgroundColor3 = themes.preset.outline
+    })
+    applyTheme(tabBarInline, "outline", "BackgroundColor3")
+    local tabBarHolder = create("Frame", {
+        Parent = tabBarInline, Position = dim2(0, 1, 0, 1),
+        Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
+        BackgroundColor3 = rgb(255, 255, 255)
+    })
+    local tabBarGradient = create("UIGradient", {
+        Parent = tabBarHolder, Rotation = 90,
+        Color = ColorSequence.new{
+            ColorSequenceKeypoint.new(0, themes.preset.low_contrast),
+            ColorSequenceKeypoint.new(1, themes.preset.high_contrast)
+        }
+    })
+    applyTheme(tabBarGradient, "contrast", "Color")
+    create("UIListLayout", {
+        Parent = tabBarHolder, FillDirection = Enum.FillDirection.Horizontal,
+        Padding = dim(0, 2), SortOrder = Enum.SortOrder.LayoutOrder
+    })
+    create("UIPadding", {
+        Parent = tabBarHolder, PaddingLeft = dim(0, 2),
+        PaddingTop = dim(0, 1), PaddingBottom = dim(0, 1)
+    })
+
+    -- Main content area
+    local mainOutline = create("Frame", {
+        Parent = windowHolder, Name = "outline",
+        Position = dim2(0, 0, 0, 40), Size = dim2(1, 0, 1, -40),
+        BorderSizePixel = 0, BackgroundColor3 = themes.preset.inline
+    })
+    applyTheme(mainOutline, "inline", "BackgroundColor3")
+    local mainInline = create("Frame", {
+        Parent = mainOutline, Name = "inline",
+        Position = dim2(0, 1, 0, 1), Size = dim2(1, -2, 1, -2),
+        BorderSizePixel = 0, BackgroundColor3 = themes.preset.outline
+    })
+    applyTheme(mainInline, "outline", "BackgroundColor3")
+    local mainContentHolder = create("Frame", {
+        Parent = mainInline, Name = "holder",
+        Position = dim2(0, 1, 0, 1), Size = dim2(1, -2, 1, -2),
+        BorderSizePixel = 0, BackgroundColor3 = rgb(255, 255, 255)
+    })
+    local mainContentGradient = create("UIGradient", {
+        Parent = mainContentHolder, Rotation = 90,
+        Color = ColorSequence.new{
+            ColorSequenceKeypoint.new(0, themes.preset.low_contrast),
+            ColorSequenceKeypoint.new(1, themes.preset.high_contrast)
+        }
+    })
+    applyTheme(mainContentGradient, "contrast", "Color")
+
+    -- Glow effect
+    local glow = create("ImageLabel", {
+        Parent = mainFrame, Name = "glow",
+        ImageColor3 = themes.preset.glow,
+        ScaleType = Enum.ScaleType.Slice,
+        BorderColor3 = rgb(0, 0, 0),
+        BackgroundColor3 = rgb(255, 255, 255),
+        Image = "http://www.roblox.com/asset/?id=18245826428",
+        BackgroundTransparency = 1, ImageTransparency = 0.8,
+        Position = dim2(0, -20, 0, -20), Size = dim2(1, 40, 1, 40),
+        ZIndex = 2, BorderSizePixel = 0,
+        SliceCenter = Rect.new(Vector2.new(21, 21), Vector2.new(79, 79))
+    })
+    applyTheme(glow, "glow", "ImageColor3")
+
+    -- Tab button factory (closure over tabBarHolder)
+    local function createTabBtn(name, order)
+        local btn = create("TextButton", {
+            Parent = tabBarHolder, Name = name, FontFace = customFont,
+            Text = name, TextColor3 = themes.preset.text,
+            BackgroundTransparency = 1, Size = dim2(0, 0, 1, 0),
+            AutomaticSize = Enum.AutomaticSize.X,
+            BorderSizePixel = 0, TextSize = 12, LayoutOrder = order,
+            BackgroundColor3 = rgb(255, 255, 255)
+        })
+        create("UIPadding", {
+            Parent = btn, PaddingLeft = dim(0, 6), PaddingRight = dim(0, 6)
+        })
+        local indicator = create("Frame", {
+            Parent = btn, Name = "active_indicator",
+            Position = dim2(0, 0, 1, -1), Size = dim2(1, 0, 0, 1),
+            BackgroundColor3 = themes.preset.accent, BorderSizePixel = 0, Visible = false
+        })
+        applyTheme(indicator, "accent", "BackgroundColor3")
+        return btn, indicator
+    end
+
+    local win = setmetatable({
+        _screenGui    = screenGui,
+        _contentHolder = mainContentHolder,
+        _tabs          = {},
+        _tabOrder      = 1,
+        _createTabBtn  = createTabBtn,
+    }, WindowAPI)
+
+    -- Always include a built-in Theme tab at the end
+    -- (call addTab("Theme") yourself if you want it in a custom position,
+    --  or it's automatically added after all user tabs via addThemeTab)
+    function win:addThemeTab()
+        local content, container = _makeScrollContent(self._contentHolder)
+        -- Override scroll to use standard padding
+        local themeLabel = create("TextLabel", {
+            Parent = container, FontFace = customFont,
+            Text = "Theme Customization", TextColor3 = themes.preset.accent,
+            BackgroundTransparency = 1, Size = dim2(1, 0, 0, 16),
+            TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left,
+            LayoutOrder = 1
+        })
+        applyTheme(themeLabel, "accent", "TextColor3")
+        _makeThemeColorPicker(container, "Outline",       "outline",       10)
+        _makeThemeColorPicker(container, "Inline",        "inline",        11)
+        _makeThemeColorPicker(container, "Accent",        "accent",        12)
+        _makeThemeColorPicker(container, "High Contrast", "high_contrast", 13)
+        _makeThemeColorPicker(container, "Low Contrast",  "low_contrast",  14)
+        _makeThemeColorPicker(container, "Text",          "text",          15)
+        _makeThemeColorPicker(container, "Glow",          "glow",          16)
+
+        local btn, indicator = self._createTabBtn("Theme", self._tabOrder)
+        self._tabOrder = self._tabOrder + 1
+        self._tabs["Theme"] = { button = btn, indicator = indicator, content = content }
+        btn.MouseButton1Click:Connect(function() self:_switchTab("Theme") end)
+    end
+
+    screenGui.AncestryChanged:Connect(function()
+        if not screenGui.Parent then
+            for _, c in pairs(connections) do c:Disconnect() end
+            connections = {}
+        end
+    end)
+
+    screenGui.Enabled = true
+    return win
+end
+
+return UILib
