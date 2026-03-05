@@ -453,50 +453,38 @@ local function _makeToggle(parent, label, default, callback, order, defaultKey)
     -- ── Optional inline keybind badge in right_components ─────────────────────
     local curKey       = defaultKey
     local keyListening = false
-    local keyConn      = nil
-    -- (keybind activation conn wired below, after setState is defined)
 
     if defaultKey then
-        -- Frame not TextButton — so clicks on badge still bubble to row for toggle
+        local keyNames = {
+            [Enum.KeyCode.LeftShift]="ls", [Enum.KeyCode.RightShift]="rs",
+            [Enum.KeyCode.LeftControl]="lc", [Enum.KeyCode.RightControl]="rc",
+            [Enum.KeyCode.LeftAlt]="la", [Enum.KeyCode.RightAlt]="ra",
+            [Enum.KeyCode.Return]="ent", [Enum.KeyCode.Backspace]="bs",
+            [Enum.KeyCode.CapsLock]="caps", [Enum.KeyCode.Insert]="ins",
+        }
+        local function keyName(k)
+            return keyNames[k] or tostring(k.Name):lower()
+        end
+
+        -- kOut: fixed pixel size, no AutomaticSize to avoid circular layout
         local kOut = create("Frame",{
             Parent=right_components,
-            Size=dim2(0,0,0,14), BorderSizePixel=0,
-            AutomaticSize=Enum.AutomaticSize.X,
-            BackgroundColor3=themes.preset.outline,
-            ZIndex=2,
+            Size=dim2(0,28,0,12), BorderSizePixel=0,
+            BackgroundColor3=themes.preset.outline, ZIndex=2,
         })
         applyTheme(kOut,"outline","BackgroundColor3")
-        create("UIPadding",{
-            Parent=kOut,
-            PaddingLeft=dim(0,1), PaddingRight=dim(0,1),
-            PaddingTop=dim(0,1), PaddingBottom=dim(0,1),
-        })
-
-        local kHover = create("Frame",{
-            Parent=kOut, BackgroundTransparency=1,
-            Size=dim2(1,0,1,0), BorderSizePixel=0,
-            BackgroundColor3=themes.preset.accent, ZIndex=3,
-        })
-        applyTheme(kHover,"accent","BackgroundColor3")
 
         local kIn = create("Frame",{
-            Parent=kOut, Name="inline",
-            Size=dim2(0,0,0,0),
-            AutomaticSize=Enum.AutomaticSize.XY,
+            Parent=kOut,
+            Position=dim2(0,1,0,1), Size=dim2(1,-2,1,-2),
             BorderSizePixel=0, ZIndex=2,
             BackgroundColor3=themes.preset.inline,
         })
         applyTheme(kIn,"inline","BackgroundColor3")
-        create("UIPadding",{
-            Parent=kIn,
-            PaddingLeft=dim(0,1), PaddingRight=dim(0,1),
-            PaddingTop=dim(0,1), PaddingBottom=dim(0,1),
-        })
 
         local kHandler = create("Frame",{
             Parent=kIn,
-            Size=dim2(0,0,0,0),
-            AutomaticSize=Enum.AutomaticSize.XY,
+            Position=dim2(0,1,0,1), Size=dim2(1,-2,1,-2),
             BorderSizePixel=0, ZIndex=2,
             BackgroundColor3=rgb(255,255,255),
         })
@@ -509,45 +497,46 @@ local function _makeToggle(parent, label, default, callback, order, defaultKey)
         })
         applyTheme(kGrad,"contrast","Color")
 
-        local kText = create("TextButton",{
+        -- hover overlay sits inside kHandler at full size — no AutomaticSize conflict
+        local kHover = create("Frame",{
+            Parent=kHandler, BackgroundTransparency=1,
+            Size=dim2(1,0,1,0), BorderSizePixel=0,
+            BackgroundColor3=themes.preset.accent, ZIndex=4,
+        })
+        applyTheme(kHover,"accent","BackgroundColor3")
+
+        local kText = create("TextLabel",{
             Parent=kHandler, FontFace=customFont,
-            Text=defaultKey.Name:lower(),
+            Text=keyName(defaultKey),
             TextColor3=themes.preset.text,
             BackgroundTransparency=1,
-            AutoButtonColor=false,
-            Size=dim2(0,0,0,0), ZIndex=2,
-            AutomaticSize=Enum.AutomaticSize.XY,
-            Position=dim2(0,0,0,0),
-            BorderSizePixel=0, TextSize=12,
-            BackgroundColor3=rgb(255,255,255),
+            Size=dim2(1,0,1,0), ZIndex=3,
+            TextSize=12, TextXAlignment=Enum.TextXAlignment.Center,
+            BorderSizePixel=0, BackgroundColor3=rgb(255,255,255),
         })
         applyTheme(kText,"text","TextColor3")
-        create("UIPadding",{
-            Parent=kText,
-            PaddingLeft=dim(0,3), PaddingRight=dim(0,3),
-            PaddingTop=dim(0,1), PaddingBottom=dim(0,1),
-        })
 
-        -- badge hover on text
-        kText.MouseEnter:Connect(function() tween(kHover,{BackgroundTransparency=0.85}) end)
-        kText.MouseLeave:Connect(function() tween(kHover,{BackgroundTransparency=1}) end)
+        kOut.MouseEnter:Connect(function() tween(kHover,{BackgroundTransparency=0.85}) end)
+        kOut.MouseLeave:Connect(function() tween(kHover,{BackgroundTransparency=1}) end)
 
-        -- right-click badge to rebind (left-click still toggles via row)
-        kText.MouseButton2Down:Connect(function()
+        -- left-click badge to rebind
+        kOut.InputBegan:Connect(function(inp)
+            if inp.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
             if keyListening then return end
             keyListening = true
             kText.Text = "..."
             tween(kText,{TextColor3=themes.preset.accent})
 
-            keyConn = UserInputService.InputBegan:Connect(function(inp, processed)
+            local rebindConn
+            rebindConn = UserInputService.InputBegan:Connect(function(i, processed)
                 if processed then return end
-                local key = inp.UserInputType == Enum.UserInputType.Keyboard
-                    and inp.KeyCode or inp.UserInputType
-                curKey = key
-                kText.Text = tostring(key.Name):lower()
+                if i.UserInputType ~= Enum.UserInputType.Keyboard then return end
+                if i.KeyCode == Enum.KeyCode.Unknown then return end
+                curKey = i.KeyCode
+                kText.Text = keyName(curKey)
                 tween(kText,{TextColor3=themes.preset.text})
                 keyListening = false
-                if keyConn then keyConn:Disconnect(); keyConn=nil end
+                rebindConn:Disconnect()
             end)
         end)
     end
@@ -565,10 +554,9 @@ local function _makeToggle(parent, label, default, callback, order, defaultKey)
     -- keybind activation — wired here so setState is in scope
     if defaultKey then
         conn(UserInputService.InputBegan, function(inp, processed)
-            if processed or not curKey then return end
-            local pressed = inp.UserInputType == Enum.UserInputType.Keyboard
-                and inp.KeyCode or inp.UserInputType
-            if pressed == curKey then
+            if processed or keyListening or not curKey then return end
+            if inp.UserInputType ~= Enum.UserInputType.Keyboard then return end
+            if inp.KeyCode == curKey then
                 setState(not state)
             end
         end)
