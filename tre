@@ -511,7 +511,10 @@ local function _makeToggle(parent, label, default, callback, order, defaultKey)
             TextColor3=themes.preset.text,
             BackgroundTransparency=1,
             Size=dim2(1,0,1,0), ZIndex=3,
-            TextSize=12, TextXAlignment=Enum.TextXAlignment.Center,
+            Position=dim2(0,0,0,-1),
+            TextSize=12,
+            TextXAlignment=Enum.TextXAlignment.Center,
+            TextYAlignment=Enum.TextYAlignment.Center,
             BorderSizePixel=0, BackgroundColor3=rgb(255,255,255),
         })
         applyTheme(kText,"text","TextColor3")
