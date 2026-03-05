@@ -457,17 +457,15 @@ local function _makeToggle(parent, label, default, callback, order, defaultKey)
     -- (keybind activation conn wired below, after setState is defined)
 
     if defaultKey then
-        -- Small badge: outline→inline→handler, all sized by content not scale
-        local kOut = create("TextButton",{
+        -- Frame not TextButton — so clicks on badge still bubble to row for toggle
+        local kOut = create("Frame",{
             Parent=right_components,
-            Text="", AutoButtonColor=false,
             Size=dim2(0,0,0,14), BorderSizePixel=0,
             AutomaticSize=Enum.AutomaticSize.X,
             BackgroundColor3=themes.preset.outline,
             ZIndex=2,
         })
         applyTheme(kOut,"outline","BackgroundColor3")
-        -- 1px border via UIPadding, not scale offsets
         create("UIPadding",{
             Parent=kOut,
             PaddingLeft=dim(0,1), PaddingRight=dim(0,1),
@@ -511,11 +509,12 @@ local function _makeToggle(parent, label, default, callback, order, defaultKey)
         })
         applyTheme(kGrad,"contrast","Color")
 
-        local kText = create("TextLabel",{
+        local kText = create("TextButton",{
             Parent=kHandler, FontFace=customFont,
             Text=defaultKey.Name:lower(),
             TextColor3=themes.preset.text,
             BackgroundTransparency=1,
+            AutoButtonColor=false,
             Size=dim2(0,0,0,0), ZIndex=2,
             AutomaticSize=Enum.AutomaticSize.XY,
             Position=dim2(0,0,0,0),
@@ -529,12 +528,12 @@ local function _makeToggle(parent, label, default, callback, order, defaultKey)
             PaddingTop=dim(0,1), PaddingBottom=dim(0,1),
         })
 
-        -- badge hover
-        kOut.MouseEnter:Connect(function() tween(kHover,{BackgroundTransparency=0}) end)
-        kOut.MouseLeave:Connect(function() tween(kHover,{BackgroundTransparency=1}) end)
+        -- badge hover on text
+        kText.MouseEnter:Connect(function() tween(kHover,{BackgroundTransparency=0.85}) end)
+        kText.MouseLeave:Connect(function() tween(kHover,{BackgroundTransparency=1}) end)
 
-        -- click badge → start listening
-        kOut.MouseButton1Down:Connect(function()
+        -- right-click badge to rebind (left-click still toggles via row)
+        kText.MouseButton2Down:Connect(function()
             if keyListening then return end
             keyListening = true
             kText.Text = "..."
@@ -550,16 +549,6 @@ local function _makeToggle(parent, label, default, callback, order, defaultKey)
                 keyListening = false
                 if keyConn then keyConn:Disconnect(); keyConn=nil end
             end)
-        end)
-
-        -- hold/release activation (toggle mode)
-        conn(UserInputService.InputBegan, function(inp, processed)
-            if processed or not curKey then return end
-            local pressed = inp.UserInputType == Enum.UserInputType.Keyboard
-                and inp.KeyCode or inp.UserInputType
-            if pressed == curKey then
-                setState(not state)
-            end
         end)
     end
     -- ─────────────────────────────────────────────────────────────────────────
