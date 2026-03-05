@@ -351,6 +351,17 @@ local function _makeToggle(parent, label, default, callback, order)
     })
     applyTheme(bgFill:FindFirstChildOfClass("UIGradient"),"contrast","Color")
 
+    -- hover overlay lives INSIDE the 14×14 checkbox box only (Skibid: hoverify(toggle_holder, toggle))
+    local hoverOverlay = create("Frame",{
+        Parent=toggleOut,
+        BackgroundTransparency=1,
+        Size=dim2(1,0,1,0),
+        BorderSizePixel=0,
+        BackgroundColor3=themes.preset.accent,
+        ZIndex=10,
+    })
+    applyTheme(hoverOverlay,"accent","BackgroundColor3")
+
     local state = default
     local busy  = false
 
@@ -370,12 +381,12 @@ local function _makeToggle(parent, label, default, callback, order)
     row.MouseButton1Click:Connect(onClick)
     toggleOut.MouseButton1Click:Connect(onClick)
 
-    -- hover highlight on the row
+    -- hover: listen on the whole row, but only glow the checkbox box
     row.MouseEnter:Connect(function()
-        tween(row,{BackgroundTransparency=0.92})
+        tween(hoverOverlay,{BackgroundTransparency=0})
     end)
     row.MouseLeave:Connect(function()
-        tween(row,{BackgroundTransparency=1})
+        tween(hoverOverlay,{BackgroundTransparency=1})
     end)
 
     -- return a card-like outer so SectionAPI can use it, plus getter
@@ -1371,6 +1382,57 @@ function TabAPI:addSection(title)
     local c = _makeSection(self._c, title, self._i)
     self._i = self._i + 1
     return setmetatable({ _c=c, _i=1 }, SectionAPI)
+end
+
+-- addColumn: Skibid library:column() — creates side-by-side columns with horizontal flex.
+-- First call lazy-creates a shared row frame. Each call adds a new column into it.
+-- Usage:
+--   local left  = tab:addColumn()
+--   local right = tab:addColumn()
+--   left:addSection("Aimbot")
+--   right:addSection("Visuals")
+function TabAPI:addColumn()
+    if not self._colRow then
+        self._colRow = create("Frame",{
+            Parent=self._c,
+            Name="column_row",
+            Size=dim2(1,0,0,0),
+            AutomaticSize=Enum.AutomaticSize.Y,
+            BackgroundTransparency=1,
+            BorderSizePixel=0,
+            LayoutOrder=self._i,
+        })
+        create("UIListLayout",{
+            Parent=self._colRow,
+            FillDirection=Enum.FillDirection.Horizontal,
+            HorizontalFlex=Enum.UIFlexAlignment.Fill,
+            VerticalAlignment=Enum.VerticalAlignment.Top,
+            Padding=dim(0,4),
+            SortOrder=Enum.SortOrder.LayoutOrder,
+        })
+        self._i = self._i + 1
+        self._colCount = 0
+    end
+
+    self._colCount = self._colCount + 1
+
+    local col = create("Frame",{
+        Parent=self._colRow,
+        Name="column_"..self._colCount,
+        Size=dim2(0,0,0,0),
+        AutomaticSize=Enum.AutomaticSize.Y,
+        BackgroundTransparency=1,
+        BorderSizePixel=0,
+        LayoutOrder=self._colCount,
+    })
+    create("UIListLayout",{
+        Parent=col,
+        Padding=dim(0,8),
+        SortOrder=Enum.SortOrder.LayoutOrder,
+    })
+
+    -- Return TabAPI-compatible so addSection works identically on columns
+    return setmetatable({ _c=col, _i=1 }, TabAPI)
 end
 
 -- ── WindowAPI ────────────────────────────────────────────────────────────────
