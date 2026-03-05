@@ -102,13 +102,24 @@ local function updateTheme()
         for pname, list in pairs(props) do
             for _, inst in pairs(list) do
                 if inst and inst.Parent then
+                    local val
                     if tname == "contrast" then
-                        inst[pname] = ColorSequence.new{
+                        val = ColorSequence.new{
                             ColorSequenceKeypoint.new(0, themes.preset.low_contrast),
                             ColorSequenceKeypoint.new(1, themes.preset.high_contrast),
                         }
                     elseif themes.preset[tname] then
-                        inst[pname] = themes.preset[tname]
+                        val = themes.preset[tname]
+                    end
+                    if val ~= nil then
+                        -- Use TweenService at t=0 so it properly cancels any
+                        -- in-flight tween on this property before setting value.
+                        -- Direct assignment (inst[pname]=val) cancels tweens
+                        -- mid-way and leaves them in a broken state.
+                        TweenService:Create(inst,
+                            TweenInfo.new(0, Enum.EasingStyle.Linear),
+                            { [pname] = val }
+                        ):Play()
                     end
                 end
             end
