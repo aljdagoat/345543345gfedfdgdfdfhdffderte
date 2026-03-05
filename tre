@@ -1198,7 +1198,7 @@ end
 -- ── Color picker ──────────────────────────────────────────────────────────────
 -- ── Color picker badge (Skibid-exact popup, parented to ScreenGui) ───────────
 -- Called with a right_components frame; builds swatch button + floating popup.
-local function _makeColorPickerBadge(right_components, default, callback)
+_makeColorPickerBadge = function(right_components, default, callback)
     local h, s, v = default:ToHSV()
     local a        = 1
 
