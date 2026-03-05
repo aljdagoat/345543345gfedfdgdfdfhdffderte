@@ -236,24 +236,87 @@ local _activeSG = nil
 
 -- ── Section ───────────────────────────────────────────────────────────────────
 local function _makeSection(parent, title, order)
+    -- Skibid: outer frame uses inline bg color
     local sec = create("Frame",{
         Parent=parent, Name=title:gsub(" ","_"),
         Size=dim2(1,0,0,0), AutomaticSize=Enum.AutomaticSize.Y,
-        BackgroundTransparency=1, BorderSizePixel=0, LayoutOrder=order,
+        BackgroundColor3=themes.preset.inline,
+        BorderSizePixel=0, LayoutOrder=order,
     })
+    applyTheme(sec,"inline","BackgroundColor3")
+
+    -- Skibid: inline frame uses outline bg color
+    local secInline = create("Frame",{
+        Parent=sec,
+        Position=dim2(0,1,0,1), Size=dim2(1,-2,1,-2),
+        AutomaticSize=Enum.AutomaticSize.Y,
+        BackgroundColor3=themes.preset.outline, BorderSizePixel=0,
+    })
+    applyTheme(secInline,"outline","BackgroundColor3")
+
+    -- Skibid: background frame — white, holds gradient + accent bar + title
+    local secBg = create("Frame",{
+        Parent=secInline,
+        Position=dim2(0,1,0,1), Size=dim2(1,-2,1,-2),
+        AutomaticSize=Enum.AutomaticSize.Y,
+        BackgroundColor3=rgb(255,255,255), BorderSizePixel=0,
+    })
+
+    -- Skibid: title label at Position=dim2(0,6,0,4), AutomaticSize=XY
     local lbl = create("TextLabel",{
-        Parent=sec, FontFace=customFont, Text=title,
-        TextColor3=themes.preset.accent, BackgroundTransparency=1,
-        Size=dim2(1,0,0,16), TextSize=12, TextXAlignment=Enum.TextXAlignment.Left,
+        Parent=secBg, FontFace=customFont, Text=title,
+        TextColor3=themes.preset.text, BackgroundTransparency=1,
+        Position=dim2(0,6,0,4), BorderSizePixel=0,
+        AutomaticSize=Enum.AutomaticSize.XY, TextSize=12,
+        BackgroundColor3=rgb(255,255,255),
     })
-    applyTheme(lbl,"accent","TextColor3")
-    local content = create("Frame",{
-        Parent=sec, Name="content", Position=dim2(0,0,0,18),
-        Size=dim2(1,0,0,0), AutomaticSize=Enum.AutomaticSize.Y,
-        BackgroundTransparency=1, BorderSizePixel=0,
+
+    -- Skibid: accent top bar Size=dim2(1,0,0,2) + white→grey gradient
+    local accentBar = create("Frame",{
+        Parent=secBg,
+        Size=dim2(1,0,0,2), BorderSizePixel=0,
+        BackgroundColor3=themes.preset.accent,
     })
-    create("UIListLayout",{ Parent=content, Padding=dim(0,4), SortOrder=Enum.SortOrder.LayoutOrder })
-    return content
+    applyTheme(accentBar,"accent","BackgroundColor3")
+    create("UIGradient",{
+        Parent=accentBar, Rotation=90,
+        Color=ColorSequence.new{
+            ColorSequenceKeypoint.new(0,rgb(255,255,255)),
+            ColorSequenceKeypoint.new(1,rgb(167,167,167)),
+        }
+    })
+
+    -- Skibid: contrast gradient on background (dark low_contrast→high_contrast)
+    local bgGrad = create("UIGradient",{
+        Parent=secBg, Rotation=90,
+        Color=ColorSequence.new{
+            ColorSequenceKeypoint.new(0,themes.preset.low_contrast),
+            ColorSequenceKeypoint.new(1,themes.preset.high_contrast),
+        }
+    })
+    applyTheme(bgGrad,"contrast","Color")
+
+    -- Skibid: elements container starts below the 20px header
+    local elements = create("Frame",{
+        Parent=secBg, Name="elements",
+        Position=dim2(0,0,0,20), Size=dim2(1,0,0,0),
+        AutomaticSize=Enum.AutomaticSize.Y,
+        BackgroundColor3=rgb(255,255,255), BorderSizePixel=0,
+    })
+
+    -- Skibid: UIListLayout Padding=dim(0,4), HorizontalAlignment=Center, SortOrder=LayoutOrder
+    create("UIListLayout",{
+        Parent=elements, Padding=dim(0,4),
+        HorizontalAlignment=Enum.HorizontalAlignment.Center,
+        SortOrder=Enum.SortOrder.LayoutOrder,
+    })
+    -- Skibid: UIPadding PaddingBottom=dim(0,10) on the elements container
+    create("UIPadding",{
+        Parent=elements,
+        PaddingBottom=dim(0,10),
+    })
+
+    return elements
 end
 
 -- ── Toggle  (Skibid: 14×14 square checkbox, accent fill fades in/out) ─────────
@@ -419,7 +482,7 @@ local function _makeSlider(parent, label, min, max, default, callback, order)
     assert(min < max, "[UILib] slider min must be < max: "..label)
     default = math.clamp(default, min, max)
 
-    -- wrapper label (Skibid uses TextLabel as root)
+    -- Skibid: root is TextLabel, Size=dim2(1,-8,0,12), AutomaticSize=Y
     local root = create("TextLabel",{
         Parent=parent, Name=label:gsub(" ","_"),
         FontFace=customFont, TextColor3=themes.preset.text,
@@ -433,7 +496,7 @@ local function _makeSlider(parent, label, min, max, default, callback, order)
         LayoutOrder=order or 0,
     })
 
-    -- label row
+    -- Skibid: left_components — label text created FIRST, then UIListLayout
     local leftComp = create("Frame",{
         Parent=root, Name="left_components",
         BackgroundTransparency=1,
@@ -441,39 +504,50 @@ local function _makeSlider(parent, label, min, max, default, callback, order)
         Size=dim2(0,0,0,14), BorderSizePixel=0,
         BackgroundColor3=rgb(255,255,255),
     })
-    create("UIListLayout",{
-        Parent=leftComp, Padding=dim(0,5),
-        FillDirection=Enum.FillDirection.Horizontal,
-    })
     local nameLbl = create("TextLabel",{
         Parent=leftComp, FontFace=customFont,
         Text=label, TextColor3=themes.preset.text,
+        Name="text",
         BackgroundTransparency=1, Size=dim2(0,0,1,-1),
         AutomaticSize=Enum.AutomaticSize.X,
         BorderSizePixel=0, TextSize=12,
         BackgroundColor3=rgb(255,255,255),
     })
+    -- Skibid: UIListLayout on left_components comes AFTER the text label
+    create("UIListLayout",{
+        Parent=leftComp, Padding=dim(0,5),
+        FillDirection=Enum.FillDirection.Horizontal,
+    })
 
-    -- bottom: the actual slider bar
+    -- Skibid: bottom_components — Size=dim2(1,0,0,0), no AutomaticSize
     local bottomComp = create("Frame",{
         Parent=root, Name="bottom_components",
         Position=dim2(0,0,0,15),
         Size=dim2(1,0,0,0), BorderSizePixel=0,
         BackgroundColor3=rgb(255,255,255),
     })
-    -- NOTE: UIListLayout added AFTER slider elements (matches Skibid order)
 
-    -- outline shell
+    -- Skibid: slider TextButton (= outline), Name="slider"
     local sliderBtn = create("TextButton",{
-        Parent=bottomComp,
+        Parent=bottomComp, Name="slider",
         Position=dim2(0,0,0,2),
-        Size=dim2(1,-1,1,12),
-        BorderSizePixel=0,
+        Size=dim2(1,-1,1,12), BorderSizePixel=0,
         BackgroundColor3=themes.preset.outline,
         Text="", AutoButtonColor=false,
     })
     applyTheme(sliderBtn,"outline","BackgroundColor3")
 
+    -- Skibid: hoverify(slider_REAL, slider) — created IMMEDIATELY after slider, before inline
+    local sliderHover = create("Frame",{
+        Parent=sliderBtn,
+        BackgroundTransparency=1,
+        Size=dim2(1,0,1,0), BorderSizePixel=0,
+        BackgroundColor3=themes.preset.accent,
+        ZIndex=1,
+    })
+    applyTheme(sliderHover,"accent","BackgroundColor3")
+
+    -- Skibid: inline frame inside slider
     local sliderIn = create("Frame",{
         Parent=sliderBtn, Name="inline",
         Position=dim2(0,1,0,1), Size=dim2(1,-2,1,-2),
@@ -482,36 +556,21 @@ local function _makeSlider(parent, label, min, max, default, callback, order)
     })
     applyTheme(sliderIn,"inline","BackgroundColor3")
 
+    -- Skibid: background frame inside inline — no BackgroundColor3 set (defaults white)
     local sliderBg = create("Frame",{
         Parent=sliderIn, Name="background",
         Position=dim2(0,1,0,1), Size=dim2(1,-2,1,-2),
         BorderSizePixel=0,
     })
-    -- Skibid: background frame has its own gradient (white→grey, no apply_theme)
-    create("UIGradient",{
-        Parent=sliderBg, Rotation=90,
-        Color=ColorSequence.new{
-            ColorSequenceKeypoint.new(0,rgb(255,255,255)),
-            ColorSequenceKeypoint.new(1,rgb(167,167,167)),
-        }
-    })
 
-    -- contrast frame (gradient bg)
+    -- Skibid: contrast frame inside background — white bg
     local contrast = create("Frame",{
         Parent=sliderBg, Name="contrast",
         Size=dim2(1,0,1,0), BorderSizePixel=0,
         BackgroundColor3=rgb(255,255,255),
     })
-    create("UIGradient",{
-        Parent=contrast, Rotation=90,
-        Color=ColorSequence.new{
-            ColorSequenceKeypoint.new(0,themes.preset.low_contrast),
-            ColorSequenceKeypoint.new(1,themes.preset.high_contrast),
-        }
-    })
-    applyTheme(contrast:FindFirstChildOfClass("UIGradient"),"contrast","Color")
 
-    -- text overlay ("cur/max")
+    -- Skibid: slidertext created FIRST inside contrast (ZIndex=2)
     local sliderText = create("TextLabel",{
         Parent=contrast, FontFace=customFont,
         TextColor3=themes.preset.text,
@@ -523,14 +582,15 @@ local function _makeSlider(parent, label, min, max, default, callback, order)
     })
     applyTheme(sliderText,"text","TextColor3")
 
-    -- fill bar (on top of text via ZIndex)
-    local initR = (default - min) / (max - min)
+    -- Skibid: fill created AFTER slidertext — starts at full size (set via setValue)
     local fill = create("Frame",{
         Parent=contrast, Name="fill",
-        Size=dim2(initR,0,1,0), BorderSizePixel=0,
+        Size=dim2(1,0,1,0), BorderSizePixel=0,
         BackgroundColor3=themes.preset.accent,
     })
     applyTheme(fill,"accent","BackgroundColor3")
+
+    -- Skibid: fill gradient (white→grey) on fill
     create("UIGradient",{
         Parent=fill, Rotation=90,
         Color=ColorSequence.new{
@@ -539,18 +599,26 @@ local function _makeSlider(parent, label, min, max, default, callback, order)
         }
     })
 
-    -- Skibid: hoverify(slider_REAL, slider) — hover frame parented to sliderBtn, triggered by root
-    local sliderHover = create("Frame",{
-        Parent=sliderBtn,
-        BackgroundTransparency=1,
-        Size=dim2(1,0,1,0),
-        BorderSizePixel=0,
-        BackgroundColor3=themes.preset.accent,
-        ZIndex=1,
+    -- Skibid: contrast gradient (dark, apply_theme) on contrast — AFTER fill
+    local contrastGrad = create("UIGradient",{
+        Parent=contrast, Rotation=90,
+        Color=ColorSequence.new{
+            ColorSequenceKeypoint.new(0,themes.preset.low_contrast),
+            ColorSequenceKeypoint.new(1,themes.preset.high_contrast),
+        }
     })
-    applyTheme(sliderHover,"accent","BackgroundColor3")
+    applyTheme(contrastGrad,"contrast","Color")
 
-    -- Skibid: UIListLayout placed AFTER slider children
+    -- Skibid: background gradient (white→grey, no apply_theme) on background — AFTER contrast
+    create("UIGradient",{
+        Parent=sliderBg, Rotation=90,
+        Color=ColorSequence.new{
+            ColorSequenceKeypoint.new(0,rgb(255,255,255)),
+            ColorSequenceKeypoint.new(1,rgb(167,167,167)),
+        }
+    })
+
+    -- Skibid: UIListLayout on bottom_components placed LAST, after all slider children
     create("UIListLayout",{
         Parent=bottomComp, Padding=dim(0,10),
         SortOrder=Enum.SortOrder.LayoutOrder,
@@ -587,7 +655,7 @@ local function _makeSlider(parent, label, min, max, default, callback, order)
         end
     end)
 
-    -- hover effect (Skibid: hoverify tweens overlay frame transparency)
+    -- Skibid: hoverify tweens the overlay on slider, triggered by root (slider_REAL)
     root.MouseEnter:Connect(function()
         tween(sliderHover,{BackgroundTransparency=0})
     end)
@@ -595,7 +663,8 @@ local function _makeSlider(parent, label, min, max, default, callback, order)
         tween(sliderHover,{BackgroundTransparency=1})
     end)
 
-    -- init display
+    -- Set correct initial fill width (Skibid: cfg.set(cfg.default) at end)
+    fill.Size = dim2((default - min) / (max - min), 0, 1, 0)
     sliderText.Text = tostring(default) .. "/" .. tostring(max)
 
     return root, function() return cur end
@@ -1484,19 +1553,22 @@ function TabAPI:addColumn()
 
     self._colCount = self._colCount + 1
 
+    -- Skibid: column frame Size=dim2(0.5,-6,0,0), AutomaticSize=Y
     local col = create("Frame",{
         Parent=self._colRow,
         Name="column_"..self._colCount,
-        Size=dim2(0,0,0,0),
+        Size=dim2(0.5,-6,0,0),
         AutomaticSize=Enum.AutomaticSize.Y,
         BackgroundTransparency=1,
         BorderSizePixel=0,
         LayoutOrder=self._colCount,
     })
+    -- Skibid: column UIListLayout Padding=dim(0,4), VerticalFlex=Fill
     create("UIListLayout",{
         Parent=col,
-        Padding=dim(0,8),
+        Padding=dim(0,4),
         SortOrder=Enum.SortOrder.LayoutOrder,
+        VerticalFlex=Enum.UIFlexAlignment.Fill,
     })
 
     -- Return TabAPI-compatible so addSection works identically on columns
