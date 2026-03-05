@@ -340,11 +340,14 @@ local function _makeToggle(parent, label, default, callback, order, defaultKey)
         ZIndex=1,
     })
 
-    -- right_components (Skibid: right-aligned holder for keybind badge etc.)
+    -- right_components: AnchorPoint=vec2(1,0.5) so it hugs the right edge inward
     local right_components = create("Frame",{
         Parent=row, Name="right_components",
-        Position=dim2(1,-1,0,1),
+        AnchorPoint=vec2(1,0.5),
+        Position=dim2(1,-1,0.5,0),
         Size=dim2(0,0,0,12), BorderSizePixel=0,
+        AutomaticSize=Enum.AutomaticSize.X,
+        BackgroundTransparency=1,
         BackgroundColor3=rgb(255,255,255),
     })
     create("UIListLayout",{
@@ -1192,89 +1195,6 @@ local function _makeButton(holderFrame, name, callback)
 end
 
 -- ── Keybind ───────────────────────────────────────────────────────────────────
-local function _makeKeybind(parent, label, defaultKey, callback, order)
-    local card, holder = makeCard(parent, 28, order)
-    card.Name = label:gsub(" ","_")
-    create("UIPadding",{ Parent=holder, PaddingLeft=dim(0,7), PaddingRight=dim(0,7) })
-    makeAccentBar(holder, true)
-
-    create("TextLabel",{
-        Parent=holder, FontFace=customFont, Text=label,
-        TextColor3=themes.preset.text, BackgroundTransparency=1,
-        Position=dim2(0,0,0,0), Size=dim2(1,-70,1,0),
-        TextSize=12, TextXAlignment=Enum.TextXAlignment.Left,
-    })
-
-    local bOut = create("Frame",{ Parent=holder, AnchorPoint=vec2(1,0.5),
-        Position=dim2(1,0,0.5,0), Size=dim2(0,66,0,16),
-        BackgroundColor3=themes.preset.outline, BorderSizePixel=0 })
-    applyTheme(bOut,"outline","BackgroundColor3")
-    local bIn = create("Frame",{ Parent=bOut, Position=dim2(0,1,0,1),
-        Size=dim2(1,-2,1,-2), BorderSizePixel=0, BackgroundColor3=themes.preset.inline })
-    applyTheme(bIn,"inline","BackgroundColor3")
-    local bH = create("Frame",{ Parent=bIn, Position=dim2(0,1,0,1),
-        Size=dim2(1,-2,1,-2), BorderSizePixel=0, BackgroundColor3=rgb(255,255,255) })
-    local bG = create("UIGradient",{ Parent=bH, Rotation=90,
-        Color=ColorSequence.new{
-            ColorSequenceKeypoint.new(0,themes.preset.low_contrast),
-            ColorSequenceKeypoint.new(1,themes.preset.high_contrast),
-        }})
-    applyTheme(bG,"contrast","Color")
-    local badgeBtn = create("TextButton",{
-        Parent=bH, FontFace=customFont,
-        Text=defaultKey.Name, TextColor3=themes.preset.accent,
-        BackgroundTransparency=1, Size=dim2(1,0,1,0),
-        TextSize=10, AutoButtonColor=false, TextXAlignment=Enum.TextXAlignment.Center,
-    })
-    applyTheme(badgeBtn,"accent","TextColor3")
-    local overlay = create("Frame",{ Parent=bH, Size=dim2(1,0,1,0),
-        BackgroundColor3=themes.preset.accent,
-        BackgroundTransparency=1, BorderSizePixel=0, ZIndex=5 })
-    applyTheme(overlay,"accent","BackgroundColor3")
-
-    local curKey     = defaultKey
-    local listening  = false
-    local listenConn = nil
-
-    local function stopListening(cancelled)
-        if not listening then return end
-        listening = false
-        if listenConn then listenConn:Disconnect(); listenConn=nil end
-        tween(badgeBtn,{ TextColor3=themes.preset.accent })
-        tween(overlay,{ BackgroundTransparency=1 })
-        if cancelled then badgeBtn.Text=curKey.Name end
-    end
-
-    local function startListening()
-        if listening then return end
-        listening     = true
-        badgeBtn.Text = "..."
-        tween(badgeBtn,{ TextColor3=themes.preset.text })
-        tween(overlay,{ BackgroundTransparency=0.82 })
-
-        listenConn = UserInputService.InputBegan:Connect(function(inp, processed)
-            if processed then return end
-            if inp.UserInputType == Enum.UserInputType.MouseButton1 then
-                stopListening(true); return
-            end
-            if inp.UserInputType ~= Enum.UserInputType.Keyboard then return end
-            if inp.KeyCode == Enum.KeyCode.Unknown then return end
-            curKey        = inp.KeyCode
-            badgeBtn.Text = inp.KeyCode.Name
-            stopListening(false)
-            safeCall(callback, curKey)
-        end)
-    end
-
-    badgeBtn.MouseButton1Click:Connect(startListening)
-    badgeBtn.MouseEnter:Connect(function() tween(bH,{BackgroundColor3=themes.preset.low_contrast}) end)
-    badgeBtn.MouseLeave:Connect(function()
-        if not listening then tween(bH,{BackgroundColor3=rgb(255,255,255)}) end
-    end)
-
-    return card, function() return curKey end
-end
-
 -- ── Color picker ──────────────────────────────────────────────────────────────
 local function _makeColorPicker(parent, label, default, callback, order)
     local card, holder = makeCard(parent, 28, order)
@@ -1615,12 +1535,6 @@ function SectionAPI:addButtonHolder()
     local frame = _makeButtonHolder(self._c, self._i)
     self._i = self._i + 1
     return setmetatable({ _f = frame }, ButtonHolderAPI)
-end
-
-function SectionAPI:addKeybind(label, key, cb)
-    local _, g = _makeKeybind(self._c, label, key, cb, self._i)
-    self._i = self._i + 1
-    return g
 end
 
 function SectionAPI:addColorPicker(label, color, cb)
