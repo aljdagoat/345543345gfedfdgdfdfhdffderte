@@ -584,7 +584,16 @@ local function _makeToggle(parent, label, default, callback, order, defaultKey)
         tween(hoverOverlay,{BackgroundTransparency=1})
     end)
 
-    return row, function() return state end
+    local toggleAPI = {}
+    toggleAPI.__index = toggleAPI
+    function toggleAPI:addColorPicker(color, cb)
+        _makeColorPickerBadge(right_components, color, cb)
+        return self
+    end
+    -- __call so existing code doing getVal() still works
+    setmetatable(toggleAPI, { __call = function() return state end })
+
+    return row, toggleAPI
 end
 
 -- ── Slider  (Skibid: flat fill bar, "cur/max" text overlay) ──────────────────
@@ -1185,68 +1194,351 @@ end
 
 -- ── Keybind ───────────────────────────────────────────────────────────────────
 -- ── Color picker ──────────────────────────────────────────────────────────────
-local function _makeColorPicker(parent, label, default, callback, order)
-    local card, holder = makeCard(parent, 28, order)
-    card.Name = label:gsub(" ","_")
-    create("UIPadding",{ Parent=holder, PaddingLeft=dim(0,7), PaddingRight=dim(0,7) })
-    makeAccentBar(holder, true)
+-- ── Color picker badge (Skibid-exact popup, parented to ScreenGui) ───────────
+-- Called with a right_components frame; builds swatch button + floating popup.
+local function _makeColorPickerBadge(right_components, default, callback)
+    local h, s, v = default:ToHSV()
+    local a        = 1
 
-    create("TextLabel",{
-        Parent=holder, FontFace=customFont, Text=label,
-        TextColor3=themes.preset.text, BackgroundTransparency=1,
-        Position=dim2(0,0,0,0), Size=dim2(1,-110,1,0),
-        TextSize=12, TextXAlignment=Enum.TextXAlignment.Left,
+    local dragging_sat   = false
+    local dragging_hue   = false
+    local dragging_alpha = false
+    local open           = false
+
+    -- ── Swatch button (badge in right_components) ─────────────────────────────
+    local cpBtn = create("TextButton",{
+        Parent=right_components,
+        Text="", AutoButtonColor=false,
+        Size=dim2(0,24,0,14), BorderSizePixel=0,
+        BackgroundColor3=themes.preset.outline, ZIndex=2,
+    })
+    applyTheme(cpBtn,"outline","BackgroundColor3")
+
+    local cpBtnHover = create("Frame",{
+        Parent=cpBtn, BackgroundTransparency=1,
+        Size=dim2(1,0,1,0), BorderSizePixel=0,
+        BackgroundColor3=themes.preset.accent, ZIndex=3,
+    })
+    applyTheme(cpBtnHover,"accent","BackgroundColor3")
+
+    local cpBtnIn = create("Frame",{
+        Parent=cpBtn, Position=dim2(0,1,0,1), Size=dim2(1,-2,1,-2),
+        BorderSizePixel=0, ZIndex=2,
+        BackgroundColor3=themes.preset.inline,
+    })
+    applyTheme(cpBtnIn,"inline","BackgroundColor3")
+
+    -- The inner swatch showing current color
+    local cpBtnHandler = create("Frame",{
+        Parent=cpBtnIn, Position=dim2(0,1,0,1), Size=dim2(1,-2,1,-2),
+        BorderSizePixel=0, BackgroundColor3=default,
+    })
+    create("UIGradient",{
+        Parent=cpBtnHandler, Rotation=90,
+        Color=ColorSequence.new{
+            ColorSequenceKeypoint.new(0,rgb(255,255,255)),
+            ColorSequenceKeypoint.new(1,rgb(167,167,167)),
+        }
     })
 
-    local swOut = create("Frame",{ Parent=holder, AnchorPoint=vec2(1,0.5),
-        Position=dim2(1,0,0.5,0), Size=dim2(0,18,0,18),
-        BackgroundColor3=themes.preset.outline, BorderSizePixel=0 })
-    applyTheme(swOut,"outline","BackgroundColor3")
-    local swIn = create("Frame",{ Parent=swOut, Position=dim2(0,1,0,1),
-        Size=dim2(1,-2,1,-2), BorderSizePixel=0, BackgroundColor3=themes.preset.inline })
-    applyTheme(swIn,"inline","BackgroundColor3")
-    local swatch = create("Frame",{ Parent=swIn, Position=dim2(0,1,0,1),
-        Size=dim2(1,-2,1,-2), BorderSizePixel=0, BackgroundColor3=default })
+    cpBtn.MouseEnter:Connect(function() tween(cpBtnHover,{BackgroundTransparency=0.85}) end)
+    cpBtn.MouseLeave:Connect(function() tween(cpBtnHover,{BackgroundTransparency=1}) end)
 
-    local iOut = create("Frame",{ Parent=holder, AnchorPoint=vec2(1,0.5),
-        Position=dim2(1,-22,0.5,0), Size=dim2(0,82,0,16),
-        BackgroundColor3=themes.preset.outline, BorderSizePixel=0 })
-    applyTheme(iOut,"outline","BackgroundColor3")
-    local iIn = create("Frame",{ Parent=iOut, Position=dim2(0,1,0,1),
-        Size=dim2(1,-2,1,-2), BorderSizePixel=0, BackgroundColor3=themes.preset.inline })
-    applyTheme(iIn,"inline","BackgroundColor3")
-    local iH = create("Frame",{ Parent=iIn, Position=dim2(0,1,0,1),
-        Size=dim2(1,-2,1,-2), BorderSizePixel=0, BackgroundColor3=rgb(255,255,255) })
-    local iG = create("UIGradient",{ Parent=iH, Rotation=90,
+    -- ── Floating popup (Skibid: 190×210, parented to ScreenGui) ──────────────
+    local sg = _activeSG or CoreGui
+
+    local cpHolder = create("Frame",{
+        Parent=sg, Name="colorpicker",
+        Size=dim2(0,190,0,210), BorderSizePixel=0,
+        BackgroundColor3=themes.preset.outline,
+        Visible=false, ZIndex=10,
+    })
+    applyTheme(cpHolder,"outline","BackgroundColor3")
+
+    local winInline = create("Frame",{
+        Parent=cpHolder, Position=dim2(0,1,0,1), Size=dim2(1,-2,1,-2),
+        BorderSizePixel=0, BackgroundColor3=themes.preset.accent,
+    })
+    applyTheme(winInline,"accent","BackgroundColor3")
+
+    local winHolder = create("Frame",{
+        Parent=winInline, Position=dim2(0,1,0,1), Size=dim2(1,-2,1,-2),
+        BorderSizePixel=0, BackgroundColor3=rgb(255,255,255),
+    })
+    local winGrad = create("UIGradient",{
+        Parent=winHolder, Rotation=90,
         Color=ColorSequence.new{
             ColorSequenceKeypoint.new(0,themes.preset.low_contrast),
             ColorSequenceKeypoint.new(1,themes.preset.high_contrast),
-        }})
-    applyTheme(iG,"contrast","Color")
-    local hexBox = create("TextBox",{
-        Parent=iH, FontFace=customFont,
-        Text="#"..default:ToHex():upper(),
-        TextColor3=themes.preset.accent, BackgroundTransparency=1,
-        Size=dim2(1,-4,1,0), Position=dim2(0,2,0,0),
-        TextSize=10, TextXAlignment=Enum.TextXAlignment.Center,
-        ClearTextOnFocus=false, BorderSizePixel=0,
+        }
     })
-    applyTheme(hexBox,"accent","TextColor3")
+    applyTheme(winGrad,"contrast","Color")
+    create("UIPadding",{
+        Parent=winHolder,
+        PaddingBottom=dim(0,4), PaddingRight=dim(0,4), PaddingLeft=dim(0,4),
+    })
 
-    local cur = default
-    hexBox.FocusLost:Connect(function(enterPressed)
-        local raw = hexBox.Text:gsub("#","")
-        if #raw==6 and raw:match("^%x+$") then
-            cur = hex("#"..raw)
-            swatch.BackgroundColor3 = cur
-            hexBox.Text = "#"..raw:upper()
-            if enterPressed then safeCall(callback, cur) end
-        else
-            hexBox.Text = "#"..cur:ToHex():upper()
+    local mainHolder = create("Frame",{
+        Parent=winHolder, Name="main_holder",
+        Position=dim2(0,0,0,20), Size=dim2(1,0,1,-40),
+        BorderSizePixel=0, BackgroundColor3=themes.preset.inline,
+    })
+    applyTheme(mainHolder,"inline","BackgroundColor3")
+
+    local mhInline = create("Frame",{
+        Parent=mainHolder, Position=dim2(0,1,0,1), Size=dim2(1,-2,1,-2),
+        BorderSizePixel=0, BackgroundColor3=themes.preset.outline,
+    })
+    applyTheme(mhInline,"outline","BackgroundColor3")
+
+    local mhBg = create("Frame",{
+        Parent=mhInline, Position=dim2(0,1,0,1), Size=dim2(1,-2,1,-2),
+        BorderSizePixel=0, BackgroundColor3=rgb(255,255,255),
+    })
+    local mhGrad = create("UIGradient",{
+        Parent=mhBg, Rotation=90,
+        Color=ColorSequence.new{
+            ColorSequenceKeypoint.new(0,themes.preset.low_contrast),
+            ColorSequenceKeypoint.new(1,themes.preset.high_contrast),
+        }
+    })
+    applyTheme(mhGrad,"contrast","Color")
+    create("UIPadding",{
+        Parent=mhBg,
+        PaddingTop=dim(0,4), PaddingBottom=dim(0,4),
+        PaddingRight=dim(0,4), PaddingLeft=dim(0,4),
+    })
+
+    -- ── Sat/Val square ────────────────────────────────────────────────────────
+    local satvalPicker = create("Frame",{
+        Parent=mhBg, Name="satval_picker",
+        Size=dim2(1,-20,1,-20), BorderSizePixel=0,
+        BackgroundColor3=themes.preset.inline,
+    })
+    applyTheme(satvalPicker,"inline","BackgroundColor3")
+
+    local svOut = create("Frame",{
+        Parent=satvalPicker, Position=dim2(0,1,0,1), Size=dim2(1,-2,1,-2),
+        BorderSizePixel=0, BackgroundColor3=themes.preset.outline,
+    })
+    applyTheme(svOut,"outline","BackgroundColor3")
+
+    local colorpicker = create("Frame",{
+        Parent=svOut, Position=dim2(0,1,0,1), Size=dim2(1,-2,1,-2),
+        BorderSizePixel=0, BackgroundColor3=Color3.fromHSV(h,1,1),
+    })
+
+    -- val: white→transparent left→right (saturation axis)
+    local val = create("TextButton",{
+        Parent=colorpicker, Name="val",
+        Size=dim2(1,0,1,0), BorderSizePixel=0,
+        BackgroundColor3=rgb(255,255,255), Text="", AutoButtonColor=false,
+    })
+    create("UIGradient",{
+        Parent=val,
+        Transparency=NumberSequence.new{
+            NumberSequenceKeypoint.new(0,0),
+            NumberSequenceKeypoint.new(1,1),
+        }
+    })
+
+    -- sat: black→transparent top→bottom (value axis)
+    local sat = create("TextButton",{
+        Parent=colorpicker, Name="sat",
+        Size=dim2(1,0,1,0), ZIndex=2,
+        BorderSizePixel=0, BackgroundColor3=rgb(255,255,255),
+        Text="", AutoButtonColor=false,
+    })
+    create("UIGradient",{
+        Parent=sat, Rotation=270,
+        Transparency=NumberSequence.new{
+            NumberSequenceKeypoint.new(0,0),
+            NumberSequenceKeypoint.new(1,1),
+        },
+        Color=ColorSequence.new{
+            ColorSequenceKeypoint.new(0,rgb(0,0,0)),
+            ColorSequenceKeypoint.new(1,rgb(0,0,0)),
+        }
+    })
+
+    local svREAL = create("Frame",{
+        Parent=colorpicker, Name="satval_picker_REAL",
+        Size=dim2(0,2,0,2), BorderSizePixel=1,
+        BackgroundColor3=rgb(255,255,255), ZIndex=3,
+    })
+
+    -- ── Hue bar (right side, vertical) ───────────────────────────────────────
+    local hueBtn = create("TextButton",{
+        Parent=mhBg, Name="hue",
+        AnchorPoint=vec2(1,0), Position=dim2(1,-1,0,0),
+        Size=dim2(0,14,1,-20), BorderSizePixel=0,
+        BackgroundColor3=themes.preset.inline, Text="", AutoButtonColor=false,
+    })
+
+    local hueOut = create("Frame",{
+        Parent=hueBtn, Position=dim2(0,1,0,1), Size=dim2(1,-2,1,-2),
+        BorderSizePixel=0, BackgroundColor3=themes.preset.outline,
+    })
+    applyTheme(hueOut,"outline","BackgroundColor3")
+
+    local hueStrip = create("Frame",{
+        Parent=hueOut, Position=dim2(0,1,0,1), Size=dim2(1,-2,1,-2),
+        BorderSizePixel=0, BackgroundColor3=rgb(255,255,255),
+    })
+    create("UIGradient",{
+        Parent=hueStrip, Rotation=270,
+        Color=ColorSequence.new{
+            ColorSequenceKeypoint.new(0,             rgb(255,0,0)),
+            ColorSequenceKeypoint.new(0.17,          rgb(255,255,0)),
+            ColorSequenceKeypoint.new(0.33,          rgb(0,255,0)),
+            ColorSequenceKeypoint.new(0.5,           rgb(0,255,255)),
+            ColorSequenceKeypoint.new(0.67,          rgb(0,0,255)),
+            ColorSequenceKeypoint.new(0.83,          rgb(255,0,255)),
+            ColorSequenceKeypoint.new(1,             rgb(255,0,0)),
+        }
+    })
+
+    local huePicker = create("Frame",{
+        Parent=hueStrip, Name="hue_picker",
+        BorderMode=Enum.BorderMode.Inset, BorderColor3=rgb(0,0,0),
+        Size=dim2(1,0,0,4), BackgroundColor3=rgb(255,255,255),
+    })
+
+    -- ── Visualize swatch (bottom-right corner) ────────────────────────────────
+    local vizOuter = create("Frame",{
+        Parent=mhBg, AnchorPoint=vec2(1,1),
+        Position=dim2(1,-1,1,-1), Size=dim2(0,14,0,14),
+        BorderSizePixel=0, BackgroundColor3=themes.preset.inline,
+    })
+    applyTheme(vizOuter,"inline","BackgroundColor3")
+
+    local vizOut2 = create("Frame",{
+        Parent=vizOuter, Position=dim2(0,1,0,1), Size=dim2(1,-2,1,-2),
+        BorderSizePixel=0, BackgroundColor3=themes.preset.outline,
+    })
+    applyTheme(vizOut2,"outline","BackgroundColor3")
+
+    local visualize = create("Frame",{
+        Parent=vizOut2, Position=dim2(0,1,0,1), Size=dim2(1,-2,1,-2),
+        BorderSizePixel=0, BackgroundColor3=default,
+    })
+
+    -- ── Alpha bar (bottom) ────────────────────────────────────────────────────
+    local alphaBtn = create("TextButton",{
+        Parent=mhBg, Name="alpha",
+        AnchorPoint=vec2(0,0.5), Position=dim2(0,0,1,-8),
+        Size=dim2(1,-20,0,14), BorderSizePixel=0,
+        BackgroundColor3=themes.preset.inline, Text="", AutoButtonColor=false,
+    })
+
+    local alphaOut = create("Frame",{
+        Parent=alphaBtn, Position=dim2(0,1,0,1), Size=dim2(1,-2,1,-2),
+        BorderSizePixel=0, BackgroundColor3=themes.preset.outline,
+    })
+    applyTheme(alphaOut,"outline","BackgroundColor3")
+
+    local alphaDrag = create("Frame",{
+        Parent=alphaOut, Position=dim2(0,1,0,1), Size=dim2(1,-2,1,-2),
+        BorderSizePixel=0, BackgroundColor3=Color3.fromHSV(h,s,v),
+    })
+
+    -- checkered alpha indicator image
+    local alphaInd = Instance.new("ImageLabel")
+    alphaInd.Parent          = alphaDrag
+    alphaInd.ScaleType       = Enum.ScaleType.Tile
+    alphaInd.Image           = "rbxassetid://18274452449"
+    alphaInd.BackgroundTransparency = 1
+    alphaInd.Size            = dim2(1,0,1,0)
+    alphaInd.TileSize        = dim2(0,6,0,6)
+    alphaInd.BorderSizePixel = 0
+
+    create("UIGradient",{
+        Parent=alphaInd,
+        Transparency=NumberSequence.new{
+            NumberSequenceKeypoint.new(0,0),
+            NumberSequenceKeypoint.new(1,1),
+        }
+    })
+
+    local alphaPicker = create("Frame",{
+        Parent=alphaDrag, Name="alpha_picker",
+        BorderMode=Enum.BorderMode.Inset, BorderColor3=rgb(0,0,0),
+        Size=dim2(0,4,1,0), BackgroundColor3=rgb(255,255,255),
+    })
+
+    -- ── set() updates all visuals ─────────────────────────────────────────────
+    local function setColor(newColor, newAlpha)
+        if newColor then h, s, v = newColor:ToHSV() end
+        if newAlpha then a = newAlpha end
+
+        local Color = Color3.fromHSV(h, s, v)
+
+        local hOffset = (1-h < 1) and 0 or -4
+        huePicker.Position   = dim2(0, 0, 1-h, hOffset)
+
+        local aOffset = (a < 1) and 0 or -4
+        alphaPicker.Position = dim2(a, aOffset, 0, 0)
+
+        alphaDrag.BackgroundColor3 = Color
+        visualize.BackgroundColor3 = Color
+        cpBtnHandler.BackgroundColor3 = Color
+        colorpicker.BackgroundColor3 = Color3.fromHSV(h, 1, 1)
+
+        local sOff = (s   < 1) and 0 or -3
+        local vOff = (1-v < 1) and 0 or -3
+        svREAL.Position = dim2(s, sOff, 1-v, vOff)
+
+        safeCall(callback, Color, a)
+    end
+
+    local function updateColor()
+        local mouse = UserInputService:GetMouseLocation()
+        if dragging_sat then
+            s = math.clamp((mouse.X - val.AbsolutePosition.X) / val.AbsoluteSize.X, 0, 1)
+            v = 1 - math.clamp((mouse.Y - sat.AbsolutePosition.Y) / sat.AbsoluteSize.Y, 0, 1)
+        elseif dragging_hue then
+            h = math.clamp(1 - (mouse.Y - hueBtn.AbsolutePosition.Y) / hueBtn.AbsoluteSize.Y, 0, 1)
+        elseif dragging_alpha then
+            a = math.clamp((mouse.X - alphaBtn.AbsolutePosition.X) / alphaBtn.AbsoluteSize.X, 0, 1)
+        end
+        setColor(nil, nil)
+    end
+
+    -- drag connections
+    sat.MouseButton1Down:Connect(function()   dragging_sat   = true end)
+    hueBtn.MouseButton1Down:Connect(function() dragging_hue  = true end)
+    alphaBtn.MouseButton1Down:Connect(function() dragging_alpha = true end)
+
+    conn(UserInputService.InputEnded, function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging_sat   = false
+            dragging_hue   = false
+            dragging_alpha = false
+        end
+    end)
+    conn(UserInputService.InputChanged, function(inp)
+        if (dragging_sat or dragging_hue or dragging_alpha)
+            and inp.UserInputType == Enum.UserInputType.MouseMovement then
+            updateColor()
         end
     end)
 
-    return card, function() return cur end
+    -- open/close popup
+    cpBtn.MouseButton1Click:Connect(function()
+        open = not open
+        if open then
+            cpHolder.Position = dim2(
+                0, cpBtn.AbsolutePosition.X + 1,
+                0, cpBtn.AbsolutePosition.Y + 17
+            )
+        end
+        cpHolder.Visible = open
+    end)
+
+    -- init
+    setColor(default, 1)
+
+    return function() return Color3.fromHSV(h, s, v), a end
 end
 
 -- ── Theme-tab color picker ─────────────────────────────────────────────────────
@@ -1524,12 +1816,6 @@ function SectionAPI:addButtonHolder()
     local frame = _makeButtonHolder(self._c, self._i)
     self._i = self._i + 1
     return setmetatable({ _f = frame }, ButtonHolderAPI)
-end
-
-function SectionAPI:addColorPicker(label, color, cb)
-    local _, g = _makeColorPicker(self._c, label, color, cb, self._i)
-    self._i = self._i + 1
-    return g
 end
 
 -- ── TabAPI ───────────────────────────────────────────────────────────────────
