@@ -75,6 +75,78 @@ local function conn(signal, fn)
     return c
 end
 
+-- ── Popup manager ──────────────────────────────────────────────────────────────
+-- Tracks all open floating popups (dropdowns, color pickers).
+-- Only one popup can be open at a time; clicking outside or pressing ESC closes all.
+local _activePopups = {}
+
+local function _closePopupAnimated(frame, onDone)
+    if not frame or not frame.Parent then return end
+    local origSize = frame.Size
+    tween(frame, { Size = UDim2.new(0, origSize.X.Offset, 0, 0) }, 0.12)
+    task.delay(0.12, function()
+        if frame and frame.Parent then
+            frame.Visible = false
+            frame.Size = origSize
+        end
+        if onDone then onDone() end
+    end)
+end
+
+local function _closeAllPopups()
+    for frame, meta in pairs(_activePopups) do
+        if frame and frame.Parent then
+            _closePopupAnimated(frame, meta.onClose)
+        end
+    end
+    table.clear(_activePopups)
+end
+
+local function _registerPopup(frame, onClose)
+    -- close everything else first (one popup at a time)
+    _closeAllPopups()
+    _activePopups[frame] = { onClose = onClose }
+end
+
+local function _unregisterPopup(frame)
+    _activePopups[frame] = nil
+end
+
+-- Global outside-click + ESC handler (wired once)
+local _popupListenersReady = false
+local function _ensurePopupListeners()
+    if _popupListenersReady then return end
+    _popupListenersReady = true
+
+    -- click outside to close
+    conn(UserInputService.InputBegan, function(inp, gpe)
+        if gpe then return end
+        if inp.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+        local mouse = UserInputService:GetMouseLocation()
+        for frame in pairs(_activePopups) do
+            if frame and frame.Parent and frame.Visible then
+                local pos  = frame.AbsolutePosition
+                local size = frame.AbsoluteSize
+                local inside =
+                    mouse.X >= pos.X and mouse.X <= pos.X + size.X and
+                    mouse.Y >= pos.Y and mouse.Y <= pos.Y + size.Y
+                if not inside then
+                    local meta = _activePopups[frame]
+                    _activePopups[frame] = nil
+                    _closePopupAnimated(frame, meta and meta.onClose)
+                end
+            end
+        end
+    end)
+
+    -- ESC closes everything
+    conn(UserInputService.InputBegan, function(inp)
+        if inp.KeyCode == Enum.KeyCode.Escape then
+            _closeAllPopups()
+        end
+    end)
+end
+
 -- ── Safe callback ─────────────────────────────────────────────────────────────
 local function safeCall(fn, ...)
     if type(fn) ~= "function" then return end
@@ -529,19 +601,37 @@ local function _makeToggle(parent, label, default, callback, order, defaultKey)
         kOut.InputBegan:Connect(function(inp)
             if inp.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
             if keyListening then return end
+            _ensurePopupListeners()
             keyListening = true
             kText.Text = "..."
             tween(kText,{TextColor3=themes.preset.accent})
+            -- register badge as a popup so outside click cancels listening
+            _registerPopup(kOut, function()
+                if keyListening then
+                    keyListening = false
+                    kText.Text = keyName(curKey)
+                    tween(kText,{TextColor3=themes.preset.text})
+                end
+            end)
 
             local rebindConn
             rebindConn = UserInputService.InputBegan:Connect(function(i, processed)
                 if processed then return end
+                if i.KeyCode == Enum.KeyCode.Escape then
+                    keyListening = false
+                    kText.Text = keyName(curKey)
+                    tween(kText,{TextColor3=themes.preset.text})
+                    _unregisterPopup(kOut)
+                    rebindConn:Disconnect()
+                    return
+                end
                 if i.UserInputType ~= Enum.UserInputType.Keyboard then return end
                 if i.KeyCode == Enum.KeyCode.Unknown then return end
                 curKey = i.KeyCode
                 kText.Text = keyName(curKey)
                 tween(kText,{TextColor3=themes.preset.text})
                 keyListening = false
+                _unregisterPopup(kOut)
                 rebindConn:Disconnect()
             end)
         end)
@@ -1050,10 +1140,12 @@ local function _makeDropdown(parent, label, items, default, callback, order)
             optBtn.MouseButton1Down:Connect(function()
                 selectedValue = v
                 valLbl.Text   = tostring(v)
-                -- close
-                openState             = false
-                floatHolder.Visible   = false
-                plusLbl.Text          = "+"
+                openState = false
+                _unregisterPopup(floatHolder)
+                _closePopupAnimated(floatHolder, function()
+                    plusLbl.Text = "+"
+                    plusLbl.TextSize = 8
+                end)
                 safeCall(callback, v)
             end)
             optBtn.MouseEnter:Connect(function()
@@ -1068,14 +1160,30 @@ local function _makeDropdown(parent, label, items, default, callback, order)
     buildOptions(items)
 
     -- toggle open/close
+    _ensurePopupListeners()
     dropBtn.MouseButton1Click:Connect(function()
-        openState = not openState
         if openState then
+            -- already open: close it
+            openState = false
+            _unregisterPopup(floatHolder)
+            _closePopupAnimated(floatHolder, function()
+                plusLbl.Text = "+"
+                plusLbl.TextSize = 8
+            end)
+        else
+            openState = true
             updateHolderPos()
+            floatHolder.Size = UDim2.new(0, floatHolder.Size.X.Offset, 0, 0)
+            floatHolder.Visible = true
+            tween(floatHolder, { Size = UDim2.new(0, floatHolder.Size.X.Offset, 0, floatHolder.AbsoluteSize.Y + 200) }, 0.12)
+            _registerPopup(floatHolder, function()
+                openState = false
+                plusLbl.Text = "+"
+                plusLbl.TextSize = 8
+            end)
+            plusLbl.Text = "-"
+            plusLbl.TextSize = 12
         end
-        floatHolder.Visible = openState
-        plusLbl.Text  = openState and "-" or "+"
-        plusLbl.TextSize = openState and 12 or 8
     end)
 
     -- hover effect (Skibid: hoverify tweens overlay transparency)
@@ -1554,15 +1662,27 @@ _makeColorPickerBadge = function(right_components, default, callback)
     end)
 
     -- open/close popup
+    _ensurePopupListeners()
     cpBtn.MouseButton1Click:Connect(function()
-        open = not open
         if open then
+            open = false
+            _unregisterPopup(cpHolder)
+            _closePopupAnimated(cpHolder)
+        else
+            open = true
             cpHolder.Position = dim2(
                 0, cpBtn.AbsolutePosition.X + 1,
                 0, cpBtn.AbsolutePosition.Y + 17
             )
+            -- animate open: scale from 0 height
+            local fullSize = UDim2.new(0, 190, 0, 210)
+            cpHolder.Size = UDim2.new(0, 190, 0, 0)
+            cpHolder.Visible = true
+            tween(cpHolder, { Size = fullSize }, 0.12)
+            _registerPopup(cpHolder, function()
+                open = false
+            end)
         end
-        cpHolder.Visible = open
     end)
 
     -- init
@@ -1999,21 +2119,38 @@ function SectionAPI:addKeybind(label, default, cb)
 
     kOut.MouseEnter:Connect(function() tween(kHover,{BackgroundTransparency=0.85}) end)
     kOut.MouseLeave:Connect(function() tween(kHover,{BackgroundTransparency=1}) end)
+    _ensurePopupListeners()
     kOut.InputBegan:Connect(function(inp)
         if inp.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
         if listening then return end
         listening = true
         kText.Text = "..."
         tween(kText,{TextColor3=themes.preset.accent})
+        _registerPopup(kOut, function()
+            if listening then
+                listening = false
+                kText.Text = keyName(curKey) or "none"
+                tween(kText,{TextColor3=themes.preset.text})
+            end
+        end)
         local rebind
         rebind = UserInputService.InputBegan:Connect(function(i, processed)
             if processed then return end
+            if i.KeyCode == Enum.KeyCode.Escape then
+                listening = false
+                kText.Text = curKey and keyName(curKey) or "none"
+                tween(kText,{TextColor3=themes.preset.text})
+                _unregisterPopup(kOut)
+                rebind:Disconnect()
+                return
+            end
             if i.UserInputType ~= Enum.UserInputType.Keyboard then return end
             if i.KeyCode == Enum.KeyCode.Unknown then return end
             curKey = i.KeyCode
             kText.Text = keyName(curKey)
             tween(kText,{TextColor3=themes.preset.text})
             listening = false
+            _unregisterPopup(kOut)
             rebind:Disconnect()
             safeCall(cb, curKey)
         end)
