@@ -390,7 +390,6 @@ local function _makeToggle(parent, label, default, callback, order)
         BackgroundColor3=themes.preset.outline,
     })
     applyTheme(toggleOut,"outline","BackgroundColor3")
-    applyTheme(toggleOut,"accent","BackgroundColor3")  -- Skibid applies both
 
     local toggleIn = create("Frame",{
         Parent=toggleOut, Name="inline",
