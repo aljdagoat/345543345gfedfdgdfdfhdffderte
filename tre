@@ -1280,6 +1280,30 @@ _makeColorPickerBadge = function(right_components, default, callback)
         PaddingBottom=dim(0,4), PaddingRight=dim(0,4), PaddingLeft=dim(0,4),
     })
 
+    -- ── Title bar ──────────────────────────────────────────────────────────────
+    local cpTitle = create("TextLabel",{
+        Parent=winHolder, FontFace=customFont,
+        Text="Color Picker", TextColor3=themes.preset.accent,
+        BackgroundTransparency=1,
+        Position=dim2(0,0,0,4), Size=dim2(1,0,0,14),
+        TextSize=12, TextXAlignment=Enum.TextXAlignment.Left,
+        BorderSizePixel=0, BackgroundColor3=rgb(255,255,255),
+        ZIndex=2,
+    })
+    applyTheme(cpTitle,"accent","TextColor3")
+    -- hex readout top-right
+    local cpHexLbl = create("TextLabel",{
+        Parent=winHolder, FontFace=customFont,
+        Text="#FFFFFF", TextColor3=themes.preset.text,
+        BackgroundTransparency=1,
+        AnchorPoint=vec2(1,0),
+        Position=dim2(1,0,0,4), Size=dim2(0,60,0,14),
+        TextSize=12, TextXAlignment=Enum.TextXAlignment.Right,
+        BorderSizePixel=0, BackgroundColor3=rgb(255,255,255),
+        ZIndex=2,
+    })
+    applyTheme(cpHexLbl,"text","TextColor3")
+
     local mainHolder = create("Frame",{
         Parent=winHolder, Name="main_holder",
         Position=dim2(0,0,0,20), Size=dim2(1,0,1,-40),
@@ -1485,16 +1509,20 @@ _makeColorPickerBadge = function(right_components, default, callback)
         visualize.BackgroundColor3 = Color
         cpBtnHandler.BackgroundColor3 = Color
         colorpicker.BackgroundColor3 = Color3.fromHSV(h, 1, 1)
+        cpHexLbl.Text = "#"..Color:ToHex():upper()
 
-        local sOff = (s   < 1) and 0 or -3
-        local vOff = (1-v < 1) and 0 or -3
+        -- center the 2px dot; clamp at edges
+        local sOff = -1
+        local vOff = -1
+        if s >= 1 then sOff = -3 end
+        if (1 - v) >= 1 then vOff = -3 end
         svREAL.Position = dim2(s, sOff, 1-v, vOff)
 
         safeCall(callback, Color, a)
     end
 
-    local function updateColor()
-        local mouse = UserInputService:GetMouseLocation()
+    -- use inp.Position to avoid GUI inset Y offset bug
+    local function updateColor(mouse)
         if dragging_sat then
             s = math.clamp((mouse.X - val.AbsolutePosition.X) / val.AbsoluteSize.X, 0, 1)
             v = 1 - math.clamp((mouse.Y - sat.AbsolutePosition.Y) / sat.AbsoluteSize.Y, 0, 1)
@@ -1521,7 +1549,7 @@ _makeColorPickerBadge = function(right_components, default, callback)
     conn(UserInputService.InputChanged, function(inp)
         if (dragging_sat or dragging_hue or dragging_alpha)
             and inp.UserInputType == Enum.UserInputType.MouseMovement then
-            updateColor()
+            updateColor(inp.Position)
         end
     end)
 
