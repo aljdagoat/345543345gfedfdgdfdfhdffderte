@@ -1,39 +1,38 @@
--- UILib.lua
--- A clean GUI library. Stripped from the original script — 1:1 visual match.
+-- UILib.lua  ·  fully stabilised build
 -- Usage:
---   local UILib = loadstring(...)()
---   local window = UILib.new("My Script")
---   local tab = window:addTab("Combat")
---   local section = tab:addSection("Settings")
---   section:addToggle("Enable", false, function(val) end)
---   section:addSlider("Speed", 1, 10, 5, function(val) end)
---   section:addKeybind("Key", Enum.KeyCode.T, function(key) end)
---   section:addColorPicker("Color", Color3.fromHex("AA969E"), function(col) end)
---   window:addTab("Players") -- auto-populated with player search
+--   local UILib = loadstring(game:HttpGet("..."))()
+--   local win   = UILib.new("My Script")
+--   local tab   = win:addTab("Combat")
+--   local sec   = tab:addSection("Settings")
+--   sec:addToggle("Enable",  false,              function(v) end)
+--   sec:addSlider("Speed",   1, 10, 5,           function(v) end)
+--   sec:addKeybind("Key",    Enum.KeyCode.T,     function(k) end)
+--   sec:addColorPicker("Col",Color3.fromHex("AA969E"), function(c) end)
+--   win:addTab("Players")   -- live player list + search
+--   win:addThemeTab()       -- live theme editor
 
-local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
-local HttpService = game:GetService("HttpService")
-local Workspace = game:GetService("Workspace")
-local CoreGui = game:GetService("CoreGui")
+local Players         = game:GetService("Players")
+local UserInputService= game:GetService("UserInputService")
+local TweenService    = game:GetService("TweenService")
+local HttpService     = game:GetService("HttpService")
+local Workspace       = game:GetService("Workspace")
+local CoreGui         = game:GetService("CoreGui")
 
 local LocalPlayer = Players.LocalPlayer
-local Camera = Workspace.CurrentCamera
+local Camera      = Workspace.CurrentCamera
 
 local vec2 = Vector2.new
 local dim2 = UDim2.new
-local dim = UDim.new
-local rgb = Color3.fromRGB
-local hex = Color3.fromHex
+local dim  = UDim.new
+local rgb  = Color3.fromRGB
+local hex  = Color3.fromHex
 
 -- ── Font ──────────────────────────────────────────────────────────────────────
-writefile("ffff.ttf", game:HttpGet("https://github.com/aljdagoat/345543345gfedfdgdfdfhdf/raw/refs/heads/main/fs-tahoma-8px%20(2).ttf"))
+writefile("ffff.ttf", game:HttpGet(
+    "https://github.com/aljdagoat/345543345gfedfdgdfdfhdf/raw/refs/heads/main/fs-tahoma-8px%20(2).ttf"))
 local _tahomaDef = {
-    name = "SmallestPixel7",
-    faces = {
-        { name = "Regular", weight = 400, style = "normal", assetId = getcustomasset("ffff.ttf") }
-    }
+    name  = "SmallestPixel7",
+    faces = {{ name="Regular", weight=400, style="normal", assetId=getcustomasset("ffff.ttf") }}
 }
 writefile("dddd.ttf", HttpService:JSONEncode(_tahomaDef))
 local customFont = Font.new(getcustomasset("dddd.ttf"), Enum.FontWeight.Regular)
@@ -41,71 +40,71 @@ local customFont = Font.new(getcustomasset("dddd.ttf"), Enum.FontWeight.Regular)
 -- ── Theme ─────────────────────────────────────────────────────────────────────
 local themes = {
     preset = {
-        ["outline"]       = hex("#0A0A0A"),
-        ["inline"]        = hex("#2D2D2D"),
-        ["accent"]        = hex("#6078BE"),
-        ["high_contrast"] = hex("#141414"),
-        ["low_contrast"]  = hex("#1E1E1E"),
-        ["text"]          = hex("#B4B4B4"),
-        ["text_outline"]  = rgb(0, 0, 0),
-        ["glow"]          = hex("#6078BE"),
+        outline       = hex("#0A0A0A"),
+        inline        = hex("#2D2D2D"),
+        accent        = hex("#6078BE"),
+        high_contrast = hex("#141414"),
+        low_contrast  = hex("#1E1E1E"),
+        text          = hex("#B4B4B4"),
+        text_outline  = rgb(0,0,0),
+        glow          = hex("#6078BE"),
     },
     utility = {
-        ["outline"]       = { ["BackgroundColor3"] = {} },
-        ["inline"]        = { ["BackgroundColor3"] = {}, ["ImageColor3"] = {} },
-        ["accent"]        = { ["BackgroundColor3"] = {}, ["TextColor3"] = {}, ["ImageColor3"] = {}, ["ScrollBarImageColor3"] = {} },
-        ["contrast"]      = { ["Color"] = {} },
-        ["text"]          = { ["TextColor3"] = {} },
-        ["text_outline"]  = { ["Color"] = {} },
-        ["glow"]          = { ["ImageColor3"] = {} },
-        ["high_contrast"] = { ["BackgroundColor3"] = {} },
-        ["low_contrast"]  = { ["BackgroundColor3"] = {} },
+        outline       = { BackgroundColor3={} },
+        inline        = { BackgroundColor3={}, ImageColor3={} },
+        accent        = { BackgroundColor3={}, TextColor3={}, ImageColor3={}, ScrollBarImageColor3={} },
+        contrast      = { Color={} },
+        text          = { TextColor3={} },
+        text_outline  = { Color={} },
+        glow          = { ImageColor3={} },
+        high_contrast = { BackgroundColor3={} },
+        low_contrast  = { BackgroundColor3={} },
     }
 }
 
+-- ── Global connection table – fix #10 (no leaks) ─────────────────────────────
 local connections = {}
 
--- ── Helpers ───────────────────────────────────────────────────────────────────
-local function tween(obj, properties)
-    local tw = TweenService:Create(obj, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), properties)
+local function conn(signal, fn)
+    local c = signal:Connect(fn)
+    table.insert(connections, c)
+    return c
+end
+
+-- ── Safe callback – fix #11 ───────────────────────────────────────────────────
+local function safeCall(fn, ...)
+    if type(fn) ~= "function" then return end
+    local ok, err = pcall(fn, ...)
+    if not ok then warn("[UILib] callback error:", err) end
+end
+
+-- ── Tween helper ─────────────────────────────────────────────────────────────
+local function tween(obj, props, t)
+    local tw = TweenService:Create(obj,
+        TweenInfo.new(t or 0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props)
     tw:Play()
     return tw
 end
 
-local function applyTheme(instance, theme, property)
-    if not themes.utility[theme] then return end
-    if not themes.utility[theme][property] then return end
-    table.insert(themes.utility[theme][property], instance)
-end
-
-local function create(instanceType, properties)
-    local instance = Instance.new(instanceType)
-    for prop, value in pairs(properties) do
-        instance[prop] = value
+-- ── Theme helpers ─────────────────────────────────────────────────────────────
+local function applyTheme(inst, theme, prop)
+    if themes.utility[theme] and themes.utility[theme][prop] then
+        table.insert(themes.utility[theme][prop], inst)
     end
-    if instanceType == "TextLabel" or instanceType == "TextButton" or instanceType == "TextBox" then
-        applyTheme(instance, "text", "TextColor3")
-        local stroke = Instance.new("UIStroke")
-        stroke.Parent = instance
-        stroke.Color = themes.preset.text_outline
-        stroke.LineJoinMode = Enum.LineJoinMode.Miter
-        applyTheme(stroke, "text_outline", "Color")
-    end
-    return instance
 end
 
 local function updateTheme()
-    for themeName, properties in pairs(themes.utility) do
-        for propertyName, instances in pairs(properties) do
-            for _, instance in pairs(instances) do
-                if instance and instance.Parent then
-                    if themeName == "contrast" then
-                        instance[propertyName] = ColorSequence.new{
+    for tname, props in pairs(themes.utility) do
+        for pname, list in pairs(props) do
+            for _, inst in pairs(list) do
+                if inst and inst.Parent then
+                    if tname == "contrast" then
+                        inst[pname] = ColorSequence.new{
                             ColorSequenceKeypoint.new(0, themes.preset.low_contrast),
-                            ColorSequenceKeypoint.new(1, themes.preset.high_contrast)
+                            ColorSequenceKeypoint.new(1, themes.preset.high_contrast),
                         }
-                    elseif themes.preset[themeName] then
-                        instance[propertyName] = themes.preset[themeName]
+                    elseif themes.preset[tname] then
+                        inst[pname] = themes.preset[tname]
                     end
                 end
             end
@@ -113,1266 +112,927 @@ local function updateTheme()
     end
 end
 
--- dragHandle = the region you click to drag; frame = the window being moved
-local function makeDraggable(frame, dragHandle)
-    dragHandle = dragHandle or frame
-    local dragging, startPos, startFramePos = false, nil, nil
-    dragHandle.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            startPos = input.Position
-            startFramePos = frame.Position
-        end
-    end)
-    dragHandle.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = false
-        end
-    end)
-    local c = UserInputService.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-            local vp = Camera.ViewportSize
-            frame.Position = dim2(
-                0, math.clamp(startFramePos.X.Offset + (input.Position.X - startPos.X), 0, vp.X - frame.Size.X.Offset),
-                0, math.clamp(startFramePos.Y.Offset + (input.Position.Y - startPos.Y), 0, vp.Y - frame.Size.Y.Offset)
-            )
-        end
-    end)
-    table.insert(connections, c)
+-- ── Instance factory ──────────────────────────────────────────────────────────
+local function create(itype, props)
+    local inst = Instance.new(itype)
+    for k, v in pairs(props) do inst[k] = v end
+    if itype=="TextLabel" or itype=="TextButton" or itype=="TextBox" then
+        applyTheme(inst, "text", "TextColor3")
+        local s = Instance.new("UIStroke")
+        s.Color        = themes.preset.text_outline
+        s.LineJoinMode = Enum.LineJoinMode.Miter
+        s.Parent       = inst
+        applyTheme(s, "text_outline", "Color")
+    end
+    return inst
 end
 
+-- ── Gradient card shell (outline -> inline -> holder+gradient) ────────────────
+local function makeCard(parent, h, order)
+    local outline = create("Frame",{
+        Parent=parent, Size=dim2(1,0,0,h), BorderSizePixel=0,
+        BackgroundColor3=themes.preset.outline, LayoutOrder=order or 0,
+    })
+    applyTheme(outline,"outline","BackgroundColor3")
+    local inline = create("Frame",{
+        Parent=outline, Position=dim2(0,1,0,1), Size=dim2(1,-2,1,-2),
+        BorderSizePixel=0, BackgroundColor3=themes.preset.inline,
+    })
+    applyTheme(inline,"inline","BackgroundColor3")
+    local holder = create("Frame",{
+        Parent=inline, Position=dim2(0,1,0,1), Size=dim2(1,-2,1,-2),
+        BorderSizePixel=0, BackgroundColor3=rgb(255,255,255),
+    })
+    local grad = create("UIGradient",{
+        Parent=holder, Rotation=90,
+        Color=ColorSequence.new{
+            ColorSequenceKeypoint.new(0, themes.preset.low_contrast),
+            ColorSequenceKeypoint.new(1, themes.preset.high_contrast),
+        }
+    })
+    applyTheme(grad,"contrast","Color")
+    return outline, holder
+end
+
+-- ── Left accent bar ───────────────────────────────────────────────────────────
+local function makeAccentBar(holder, visible)
+    local bar = create("Frame",{
+        Parent=holder, Size=dim2(0,2,1,0), Position=dim2(0,-7,0,0),
+        BackgroundColor3=themes.preset.accent, BorderSizePixel=0,
+        BackgroundTransparency = visible and 0 or 1,
+    })
+    applyTheme(bar,"accent","BackgroundColor3")
+    return bar
+end
+
+-- ── Draggable – fix #6 (AbsoluteSize clamp, title-bar handle only) ────────────
+local function makeDraggable(frame, handle)
+    handle = handle or frame
+    local dragging, startMouse, startFrame = false, nil, nil
+    handle.InputBegan:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging   = true
+            startMouse = inp.Position
+            startFrame = frame.Position
+        end
+    end)
+    handle.InputEnded:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1 then dragging=false end
+    end)
+    conn(UserInputService.InputChanged, function(inp)
+        if not dragging or inp.UserInputType ~= Enum.UserInputType.MouseMovement then return end
+        local vp = Camera.ViewportSize
+        frame.Position = dim2(0,
+            math.clamp(startFrame.X.Offset + (inp.Position.X - startMouse.X), 0, vp.X - frame.AbsoluteSize.X),
+            0,
+            math.clamp(startFrame.Y.Offset + (inp.Position.Y - startMouse.Y), 0, vp.Y - frame.AbsoluteSize.Y)
+        )
+    end)
+end
+
+-- ── Resizable – fix #7 (min size, offset-only) ───────────────────────────────
+local MIN_W, MIN_H = 280, 200
 local function makeResizable(frame)
-    local resizeFrame = Instance.new("TextButton")
-    resizeFrame.Position = dim2(1, -10, 1, -10)
-    resizeFrame.Size = dim2(0, 10, 0, 10)
-    resizeFrame.BackgroundTransparency = 1
-    resizeFrame.Text = ""
-    resizeFrame.Parent = frame
+    local grip      = Instance.new("TextButton")
+    grip.Size       = dim2(0,10,0,10)
+    grip.Position   = dim2(1,-10,1,-10)
+    grip.BackgroundTransparency = 1
+    grip.Text       = ""
+    grip.ZIndex     = 200
+    grip.Parent     = frame
 
-    local resizing, startSize, startPos = false, nil, nil
-    local originalSize = frame.Size
-
-    resizeFrame.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            resizing = true
-            startPos = input.Position
-            startSize = frame.Size
+    local resizing, startMouse, startSize = false, nil, nil
+    grip.InputBegan:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1 then
+            resizing   = true
+            startMouse = inp.Position
+            startSize  = frame.Size
         end
     end)
-    resizeFrame.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            resizing = false
-        end
+    grip.InputEnded:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1 then resizing=false end
     end)
-    local c = UserInputService.InputChanged:Connect(function(input)
-        if resizing and input.UserInputType == Enum.UserInputType.MouseMovement then
-            local vp = Camera.ViewportSize
-            frame.Size = dim2(
-                startSize.X.Scale, math.clamp(startSize.X.Offset + (input.Position.X - startPos.X), originalSize.X.Offset, vp.X),
-                startSize.Y.Scale, math.clamp(startSize.Y.Offset + (input.Position.Y - startPos.Y), originalSize.Y.Offset, vp.Y)
-            )
-        end
+    conn(UserInputService.InputChanged, function(inp)
+        if not resizing or inp.UserInputType ~= Enum.UserInputType.MouseMovement then return end
+        local vp = Camera.ViewportSize
+        frame.Size = dim2(0,
+            math.clamp(startSize.X.Offset + (inp.Position.X - startMouse.X), MIN_W, vp.X),
+            0,
+            math.clamp(startSize.Y.Offset + (inp.Position.Y - startMouse.Y), MIN_H, vp.Y)
+        )
     end)
-    table.insert(connections, c)
 end
 
--- ── Component builders (private) ──────────────────────────────────────────────
+-- ─────────────────────────────────────────────────────────────────────────────
+-- COMPONENTS
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- ── Section ───────────────────────────────────────────────────────────────────
 local function _makeSection(parent, title, order)
-    local section = create("Frame", {
-        Parent = parent, Name = title:gsub(" ", "_"),
-        Size = dim2(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
-        BackgroundTransparency = 1, BorderSizePixel = 0, LayoutOrder = order
+    local sec = create("Frame",{
+        Parent=parent, Name=title:gsub(" ","_"),
+        Size=dim2(1,0,0,0), AutomaticSize=Enum.AutomaticSize.Y,
+        BackgroundTransparency=1, BorderSizePixel=0, LayoutOrder=order,
     })
-    local sectionTitle = create("TextLabel", {
-        Parent = section, FontFace = customFont, Text = title,
-        TextColor3 = themes.preset.accent, BackgroundTransparency = 1,
-        Size = dim2(1, 0, 0, 16), TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left
+    local lbl = create("TextLabel",{
+        Parent=sec, FontFace=customFont, Text=title,
+        TextColor3=themes.preset.accent, BackgroundTransparency=1,
+        Size=dim2(1,0,0,16), TextSize=12, TextXAlignment=Enum.TextXAlignment.Left,
     })
-    applyTheme(sectionTitle, "accent", "TextColor3")
-    local content = create("Frame", {
-        Parent = section, Name = "content", Position = dim2(0, 0, 0, 18),
-        Size = dim2(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
-        BackgroundTransparency = 1, BorderSizePixel = 0
+    applyTheme(lbl,"accent","TextColor3")
+    local content = create("Frame",{
+        Parent=sec, Name="content", Position=dim2(0,0,0,18),
+        Size=dim2(1,0,0,0), AutomaticSize=Enum.AutomaticSize.Y,
+        BackgroundTransparency=1, BorderSizePixel=0,
     })
-    create("UIListLayout", { Parent = content, Padding = dim(0, 4), SortOrder = Enum.SortOrder.LayoutOrder })
+    create("UIListLayout",{ Parent=content, Padding=dim(0,4), SortOrder=Enum.SortOrder.LayoutOrder })
     return content
 end
 
-local function _makeToggle(parent, label, defaultValue, callback, order)
-    local cardOutline = create("Frame", {
-        Parent = parent, Name = label:gsub(" ", "_"),
-        Size = dim2(1, 0, 0, 26), BorderSizePixel = 0,
-        BackgroundColor3 = themes.preset.outline, LayoutOrder = order or 0
-    })
-    applyTheme(cardOutline, "outline", "BackgroundColor3")
+-- ── Toggle – fix #2 (debounce, single setState, pcall) ───────────────────────
+local function _makeToggle(parent, label, default, callback, order)
+    assert(type(default)=="boolean", "[UILib] toggle default must be boolean: "..label)
 
-    local cardInline = create("Frame", {
-        Parent = cardOutline, Position = dim2(0, 1, 0, 1),
-        Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
-        BackgroundColor3 = themes.preset.inline
-    })
-    applyTheme(cardInline, "inline", "BackgroundColor3")
+    local card, holder = makeCard(parent, 28, order)
+    card.Name = label:gsub(" ","_")
+    create("UIPadding",{ Parent=holder, PaddingLeft=dim(0,7), PaddingRight=dim(0,7) })
+    local bar = makeAccentBar(holder, default)
 
-    local cardHolder = create("Frame", {
-        Parent = cardInline, Position = dim2(0, 1, 0, 1),
-        Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
-        BackgroundColor3 = rgb(255, 255, 255)
-    })
-    local cardGradient = create("UIGradient", {
-        Parent = cardHolder, Rotation = 90,
-        Color = ColorSequence.new{
-            ColorSequenceKeypoint.new(0, themes.preset.low_contrast),
-            ColorSequenceKeypoint.new(1, themes.preset.high_contrast)
-        }
-    })
-    applyTheme(cardGradient, "contrast", "Color")
-    create("UIPadding", {
-        Parent = cardHolder,
-        PaddingLeft = dim(0, 7), PaddingRight = dim(0, 7),
+    create("TextLabel",{
+        Parent=holder, FontFace=customFont, Text=label,
+        TextColor3=themes.preset.text, BackgroundTransparency=1,
+        Position=dim2(0,0,0,0), Size=dim2(1,-38,1,0),
+        TextSize=12, TextXAlignment=Enum.TextXAlignment.Left,
     })
 
-    -- Accent left-edge bar — parented to cardInline so it spans the full card height regardless of padding
-    local accentBar = create("Frame", {
-        Parent = cardInline, Size = dim2(0, 2, 1, 0), Position = dim2(0, 0, 0, 0),
-        BackgroundColor3 = themes.preset.accent, BorderSizePixel = 0, ZIndex = 5,
-        BackgroundTransparency = defaultValue and 0 or 1
+    local PILL_W, PILL_H = 28, 14
+    local trkOut = create("Frame",{
+        Parent=holder, AnchorPoint=vec2(1,0.5),
+        Position=dim2(1,0,0.5,0), Size=dim2(0,PILL_W+2,0,PILL_H+2),
+        BackgroundColor3=themes.preset.outline, BorderSizePixel=0,
     })
-    applyTheme(accentBar, "accent", "BackgroundColor3")
-
-    -- Label
-    create("TextLabel", {
-        Parent = cardHolder, FontFace = customFont, Text = label,
-        TextColor3 = themes.preset.text, BackgroundTransparency = 1,
-        Position = dim2(0, 0, 0, 0), Size = dim2(1, -24, 1, 0),
-        TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left
+    applyTheme(trkOut,"outline","BackgroundColor3")
+    local trkIn = create("Frame",{
+        Parent=trkOut, Position=dim2(0,1,0,1), Size=dim2(1,-2,1,-2),
+        BorderSizePixel=0, BackgroundColor3=themes.preset.inline,
     })
-
-    -- Square checkbox: outline → inner fill
-    local BOX = 12
-    local boxOutline = create("Frame", {
-        Parent = cardHolder,
-        AnchorPoint = vec2(1, 0.5),
-        Position = dim2(1, 0, 0.5, 0),
-        Size = dim2(0, BOX + 2, 0, BOX + 2),
-        BackgroundColor3 = themes.preset.outline, BorderSizePixel = 0
+    applyTheme(trkIn,"inline","BackgroundColor3")
+    local track = create("Frame",{
+        Parent=trkIn, Position=dim2(0,1,0,1), Size=dim2(1,-2,1,-2),
+        BorderSizePixel=0,
+        BackgroundColor3=default and themes.preset.accent or themes.preset.high_contrast,
     })
-    applyTheme(boxOutline, "outline", "BackgroundColor3")
+    if default then applyTheme(track,"accent","BackgroundColor3") end
 
-    local boxInner = create("Frame", {
-        Parent = boxOutline, Position = dim2(0, 1, 0, 1),
-        Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
-        BackgroundColor3 = defaultValue and themes.preset.accent or themes.preset.high_contrast
-    })
-    if defaultValue then applyTheme(boxInner, "accent", "BackgroundColor3") end
-
-    -- Click button over whole card
-    local clickBtn = create("TextButton", {
-        Parent = cardHolder, Size = dim2(1, 0, 1, 0),
-        BackgroundTransparency = 1, Text = "",
-        BorderSizePixel = 0, AutoButtonColor = false, ZIndex = 10
+    local TS = PILL_H - 4
+    local ON_X, OFF_X = PILL_W-TS-3, 2
+    local thumb = create("Frame",{
+        Parent=track, Size=dim2(0,TS,0,TS),
+        Position=dim2(0, default and ON_X or OFF_X, 0.5, -TS/2),
+        BackgroundColor3=default and rgb(255,255,255) or themes.preset.inline,
+        BorderSizePixel=0,
     })
 
-    -- White overlay for hover — tweens transparency, no gradient conflict
-    local hoverOverlay = Instance.new("Frame")
-    hoverOverlay.Size = dim2(1, 0, 1, 0)
-    hoverOverlay.BackgroundColor3 = rgb(255, 255, 255)
-    hoverOverlay.BackgroundTransparency = 1
-    hoverOverlay.BorderSizePixel = 0
-    hoverOverlay.ZIndex = 9
-    hoverOverlay.Parent = cardHolder
-
-    local isEnabled = defaultValue
-    clickBtn.MouseButton1Click:Connect(function()
-        isEnabled = not isEnabled
-        tween(boxInner,  { BackgroundColor3 = isEnabled and themes.preset.accent or themes.preset.high_contrast })
-        tween(accentBar, { BackgroundTransparency = isEnabled and 0 or 1 })
-        if callback then callback(isEnabled) end
-    end)
-    clickBtn.MouseEnter:Connect(function()
-        tween(hoverOverlay, { BackgroundTransparency = 0.88 })
-    end)
-    clickBtn.MouseLeave:Connect(function()
-        tween(hoverOverlay, { BackgroundTransparency = 1 })
-    end)
-
-    return cardOutline, function() return isEnabled end
-end
-
-local function _makeSlider(parent, label, min, max, default, callback, order)
-    local cardOutline = create("Frame", {
-        Parent = parent, Name = label:gsub(" ", "_"),
-        Size = dim2(1, 0, 0, 38), BorderSizePixel = 0,
-        BackgroundColor3 = themes.preset.outline, LayoutOrder = order or 0
-    })
-    applyTheme(cardOutline, "outline", "BackgroundColor3")
-
-    local cardInline = create("Frame", {
-        Parent = cardOutline, Position = dim2(0, 1, 0, 1),
-        Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
-        BackgroundColor3 = themes.preset.inline
-    })
-    applyTheme(cardInline, "inline", "BackgroundColor3")
-
-    local cardHolder = create("Frame", {
-        Parent = cardInline, Position = dim2(0, 1, 0, 1),
-        Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
-        BackgroundColor3 = rgb(255, 255, 255)
-    })
-    local cardGradient = create("UIGradient", {
-        Parent = cardHolder, Rotation = 90,
-        Color = ColorSequence.new{
-            ColorSequenceKeypoint.new(0, themes.preset.low_contrast),
-            ColorSequenceKeypoint.new(1, themes.preset.high_contrast)
-        }
-    })
-    applyTheme(cardGradient, "contrast", "Color")
-    create("UIPadding", {
-        Parent = cardHolder,
-        PaddingLeft = dim(0, 7), PaddingRight = dim(0, 7),
-        PaddingTop = dim(0, 5), PaddingBottom = dim(0, 5)
+    local clickBtn = create("TextButton",{
+        Parent=holder, Size=dim2(1,0,1,0), BackgroundTransparency=1,
+        Text="", BorderSizePixel=0, AutoButtonColor=false, ZIndex=10,
     })
 
-    -- Accent left-edge bar — parented to cardInline, spans full card height
-    local accentBar = create("Frame", {
-        Parent = cardInline, Size = dim2(0, 2, 1, 0), Position = dim2(0, 0, 0, 0),
-        BackgroundColor3 = themes.preset.accent, BorderSizePixel = 0, ZIndex = 5
-    })
-    applyTheme(accentBar, "accent", "BackgroundColor3")
+    local state = default
+    local busy  = false
 
-    -- Top row: label on left, value badge on right
-    local topRow = create("Frame", {
-        Parent = cardHolder, Size = dim2(1, 0, 0, 13),
-        BackgroundTransparency = 1, BorderSizePixel = 0
-    })
-
-    create("TextLabel", {
-        Parent = topRow, FontFace = customFont, Text = label,
-        TextColor3 = themes.preset.text, BackgroundTransparency = 1,
-        Size = dim2(1, -42, 1, 0), TextSize = 12,
-        TextXAlignment = Enum.TextXAlignment.Left
-    })
-
-    -- Value badge: outline → inline → gradient holder
-    local valOutline = create("Frame", {
-        Parent = topRow, AnchorPoint = vec2(1, 0.5),
-        Position = dim2(1, 0, 0.5, 0), Size = dim2(0, 40, 0, 13),
-        BackgroundColor3 = themes.preset.outline, BorderSizePixel = 0
-    })
-    applyTheme(valOutline, "outline", "BackgroundColor3")
-    local valInline = create("Frame", {
-        Parent = valOutline, Position = dim2(0, 1, 0, 1),
-        Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
-        BackgroundColor3 = themes.preset.inline
-    })
-    applyTheme(valInline, "inline", "BackgroundColor3")
-    local valHolder = create("Frame", {
-        Parent = valInline, Position = dim2(0, 1, 0, 1),
-        Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
-        BackgroundColor3 = rgb(255, 255, 255)
-    })
-    local valGrad = create("UIGradient", {
-        Parent = valHolder, Rotation = 90,
-        Color = ColorSequence.new{
-            ColorSequenceKeypoint.new(0, themes.preset.low_contrast),
-            ColorSequenceKeypoint.new(1, themes.preset.high_contrast)
-        }
-    })
-    applyTheme(valGrad, "contrast", "Color")
-    local valLabel = create("TextLabel", {
-        Parent = valHolder, FontFace = customFont,
-        Text = string.format("%.1f", default),
-        TextColor3 = themes.preset.accent, BackgroundTransparency = 1,
-        Size = dim2(1, 0, 1, 0), TextSize = 10,
-        TextXAlignment = Enum.TextXAlignment.Center
-    })
-    applyTheme(valLabel, "accent", "TextColor3")
-
-    -- Track: flat, 6px tall, outline border
-    local trackOutline = create("Frame", {
-        Parent = cardHolder, Position = dim2(0, 0, 0, 18),
-        Size = dim2(1, 0, 0, 8),
-        BackgroundColor3 = themes.preset.outline, BorderSizePixel = 0
-    })
-    applyTheme(trackOutline, "outline", "BackgroundColor3")
-
-    local trackBg = create("Frame", {
-        Parent = trackOutline, Position = dim2(0, 1, 0, 1),
-        Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
-        BackgroundColor3 = themes.preset.high_contrast
-    })
-    applyTheme(trackBg, "high_contrast", "BackgroundColor3")
-
-    local initRatio = math.clamp((default - min) / (max - min), 0, 1)
-    local fill = create("Frame", {
-        Parent = trackBg, Size = dim2(initRatio, 0, 1, 0),
-        BackgroundColor3 = themes.preset.accent, BorderSizePixel = 0
-    })
-    applyTheme(fill, "accent", "BackgroundColor3")
-
-    -- Grab handle: a small vertical bar that rides on the fill edge
-    local handle = create("Frame", {
-        Parent = trackBg,
-        AnchorPoint = vec2(0.5, 0.5),
-        Position = dim2(initRatio, 0, 0.5, 0),
-        Size = dim2(0, 3, 1, 4),  -- slightly taller than track
-        BackgroundColor3 = rgb(255, 255, 255),
-        BorderSizePixel = 0, ZIndex = 3
-    })
-
-    local currentValue = default
-    local dragging = false
-
-    local function applyRatio(relX)
-        relX = math.clamp(relX, 0, 1)
-        currentValue = min + (max - min) * relX
-        fill.Size           = dim2(relX, 0, 1, 0)
-        handle.Position     = dim2(relX, 0, 0.5, 0)
-        valLabel.Text       = string.format("%.1f", currentValue)
-        if callback then callback(currentValue) end
+    local function setState(val)
+        state = val
+        tween(track, { BackgroundColor3=val and themes.preset.accent or themes.preset.high_contrast })
+        tween(thumb, {
+            Position         = dim2(0, val and ON_X or OFF_X, 0.5, -TS/2),
+            BackgroundColor3 = val and rgb(255,255,255) or themes.preset.inline,
+        })
+        tween(bar, { BackgroundTransparency=val and 0 or 1 })
+        safeCall(callback, val)
     end
 
-    -- InputBegan on the track starts drag
-    trackOutline.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            local relX = (input.Position.X - trackBg.AbsolutePosition.X) / trackBg.AbsoluteSize.X
-            applyRatio(relX)
-        end
+    clickBtn.MouseButton1Click:Connect(function()
+        if busy then return end
+        busy = true
+        setState(not state)
+        task.delay(0.15, function() busy=false end)
     end)
+    clickBtn.MouseEnter:Connect(function() tween(holder,{BackgroundColor3=themes.preset.low_contrast}) end)
+    clickBtn.MouseLeave:Connect(function() tween(holder,{BackgroundColor3=rgb(255,255,255)}) end)
 
-    -- Global InputEnded stops drag (catches mouse-up outside track)
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = false
-        end
-    end)
-
-    -- Global InputChanged moves the fill while dragging
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-            local relX = (input.Position.X - trackBg.AbsolutePosition.X) / trackBg.AbsoluteSize.X
-            applyRatio(relX)
-        end
-    end)
-
-    return cardOutline, function() return currentValue end
+    return card, function() return state end
 end
 
+-- ── Slider – fix #3 (single bool, AbsolutePosition math, clamped, 2dp) ───────
+local function _makeSlider(parent, label, min, max, default, callback, order)
+    assert(min < max, "[UILib] slider min must be < max: "..label)
+    default = math.clamp(default, min, max)
+
+    local card, holder = makeCard(parent, 40, order)
+    card.Name = label:gsub(" ","_")
+    create("UIPadding",{ Parent=holder,
+        PaddingLeft=dim(0,7), PaddingRight=dim(0,7),
+        PaddingTop=dim(0,5),  PaddingBottom=dim(0,5),
+    })
+    makeAccentBar(holder, true)
+
+    -- top row
+    local topRow = create("Frame",{ Parent=holder, Size=dim2(1,0,0,12),
+        BackgroundTransparency=1, BorderSizePixel=0 })
+    create("TextLabel",{
+        Parent=topRow, FontFace=customFont, Text=label,
+        TextColor3=themes.preset.text, BackgroundTransparency=1,
+        Size=dim2(1,-40,1,0), TextSize=12, TextXAlignment=Enum.TextXAlignment.Left,
+    })
+
+    -- value pill
+    local vOut = create("Frame",{ Parent=topRow, AnchorPoint=vec2(1,0),
+        Position=dim2(1,0,0,0), Size=dim2(0,38,0,12),
+        BackgroundColor3=themes.preset.outline, BorderSizePixel=0 })
+    applyTheme(vOut,"outline","BackgroundColor3")
+    local vIn = create("Frame",{ Parent=vOut, Position=dim2(0,1,0,1),
+        Size=dim2(1,-2,1,-2), BorderSizePixel=0, BackgroundColor3=themes.preset.inline })
+    applyTheme(vIn,"inline","BackgroundColor3")
+    local vH = create("Frame",{ Parent=vIn, Position=dim2(0,1,0,1),
+        Size=dim2(1,-2,1,-2), BorderSizePixel=0, BackgroundColor3=rgb(255,255,255) })
+    local vG = create("UIGradient",{ Parent=vH, Rotation=90,
+        Color=ColorSequence.new{
+            ColorSequenceKeypoint.new(0,themes.preset.low_contrast),
+            ColorSequenceKeypoint.new(1,themes.preset.high_contrast),
+        }})
+    applyTheme(vG,"contrast","Color")
+    local valLbl = create("TextLabel",{
+        Parent=vH, FontFace=customFont, Text=string.format("%.2f",default),
+        TextColor3=themes.preset.accent, BackgroundTransparency=1,
+        Size=dim2(1,0,1,0), TextSize=10, TextXAlignment=Enum.TextXAlignment.Center,
+    })
+    applyTheme(valLbl,"accent","TextColor3")
+
+    -- track
+    local trkRow = create("Frame",{ Parent=holder, Position=dim2(0,0,0,16),
+        Size=dim2(1,0,0,8), BackgroundTransparency=1, BorderSizePixel=0 })
+    local trkOut = create("Frame",{ Parent=trkRow, Size=dim2(1,0,0,8),
+        BackgroundColor3=themes.preset.outline, BorderSizePixel=0 })
+    applyTheme(trkOut,"outline","BackgroundColor3")
+    local trkIn = create("Frame",{ Parent=trkOut, Position=dim2(0,1,0,1),
+        Size=dim2(1,-2,1,-2), BorderSizePixel=0,
+        BackgroundColor3=themes.preset.high_contrast })
+    applyTheme(trkIn,"high_contrast","BackgroundColor3")
+
+    local initR = (default-min)/(max-min)
+    local fill  = create("Frame",{ Parent=trkIn, Size=dim2(initR,0,1,0),
+        BackgroundColor3=themes.preset.accent, BorderSizePixel=0 })
+    applyTheme(fill,"accent","BackgroundColor3")
+
+    local THUMB = 10
+    local thumb = create("Frame",{
+        Parent=trkOut, AnchorPoint=vec2(0.5,0.5),
+        Position=dim2(initR,0,0.5,0), Size=dim2(0,THUMB,0,THUMB),
+        BackgroundColor3=rgb(255,255,255), BorderSizePixel=0, ZIndex=3,
+    })
+    local dot = create("Frame",{ Parent=thumb, AnchorPoint=vec2(0.5,0.5),
+        Position=dim2(0.5,0,0.5,0), Size=dim2(0,4,0,4),
+        BackgroundColor3=themes.preset.accent, BorderSizePixel=0, ZIndex=4 })
+    applyTheme(dot,"accent","BackgroundColor3")
+
+    local cur      = default
+    local dragging = false
+
+    local function applyRatio(ratio)
+        ratio = math.clamp(ratio, 0, 1)
+        cur   = math.floor((min + (max-min)*ratio)*100)/100
+        fill.Size       = dim2(ratio,0,1,0)
+        thumb.Position  = dim2(ratio,0,0.5,0)
+        valLbl.Text     = string.format("%.2f", cur)
+        safeCall(callback, cur)
+    end
+
+    local function onInput(inp)
+        applyRatio((inp.Position.X - trkIn.AbsolutePosition.X) / trkIn.AbsoluteSize.X)
+    end
+
+    trkOut.InputBegan:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging=true; onInput(inp)
+        end
+    end)
+    trkOut.InputEnded:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1 then dragging=false end
+    end)
+    conn(UserInputService.InputChanged, function(inp)
+        if dragging and inp.UserInputType == Enum.UserInputType.MouseMovement then onInput(inp) end
+    end)
+
+    return card, function() return cur end
+end
+
+-- ── Keybind – fix #4 (unknown filter, outside-click cancel) ──────────────────
 local function _makeKeybind(parent, label, defaultKey, callback, order)
-    -- Card shell
-    local cardOutline = create("Frame", {
-        Parent = parent, Name = label:gsub(" ", "_"),
-        Size = dim2(1, 0, 0, 28), BorderSizePixel = 0,
-        BackgroundColor3 = themes.preset.outline, LayoutOrder = order or 0
-    })
-    applyTheme(cardOutline, "outline", "BackgroundColor3")
+    local card, holder = makeCard(parent, 28, order)
+    card.Name = label:gsub(" ","_")
+    create("UIPadding",{ Parent=holder, PaddingLeft=dim(0,7), PaddingRight=dim(0,7) })
+    makeAccentBar(holder, true)
 
-    local cardInline = create("Frame", {
-        Parent = cardOutline, Position = dim2(0, 1, 0, 1),
-        Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
-        BackgroundColor3 = themes.preset.inline
-    })
-    applyTheme(cardInline, "inline", "BackgroundColor3")
-
-    local cardHolder = create("Frame", {
-        Parent = cardInline, Position = dim2(0, 1, 0, 1),
-        Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
-        BackgroundColor3 = rgb(255, 255, 255)
-    })
-    local cardGradient = create("UIGradient", {
-        Parent = cardHolder, Rotation = 90,
-        Color = ColorSequence.new{
-            ColorSequenceKeypoint.new(0, themes.preset.low_contrast),
-            ColorSequenceKeypoint.new(1, themes.preset.high_contrast)
-        }
-    })
-    applyTheme(cardGradient, "contrast", "Color")
-    create("UIPadding", {
-        Parent = cardHolder,
-        PaddingLeft = dim(0, 7), PaddingRight = dim(0, 7),
-        PaddingTop = dim(0, 0), PaddingBottom = dim(0, 0)
+    create("TextLabel",{
+        Parent=holder, FontFace=customFont, Text=label,
+        TextColor3=themes.preset.text, BackgroundTransparency=1,
+        Position=dim2(0,0,0,0), Size=dim2(1,-70,1,0),
+        TextSize=12, TextXAlignment=Enum.TextXAlignment.Left,
     })
 
-    -- Accent bar parented to cardInline for full card height
-    local accentBar = create("Frame", {
-        Parent = cardInline, Size = dim2(0, 2, 1, 0), Position = dim2(0, 0, 0, 0),
-        BackgroundColor3 = themes.preset.accent, BorderSizePixel = 0, ZIndex = 5
+    local bOut = create("Frame",{ Parent=holder, AnchorPoint=vec2(1,0.5),
+        Position=dim2(1,0,0.5,0), Size=dim2(0,66,0,16),
+        BackgroundColor3=themes.preset.outline, BorderSizePixel=0 })
+    applyTheme(bOut,"outline","BackgroundColor3")
+    local bIn = create("Frame",{ Parent=bOut, Position=dim2(0,1,0,1),
+        Size=dim2(1,-2,1,-2), BorderSizePixel=0, BackgroundColor3=themes.preset.inline })
+    applyTheme(bIn,"inline","BackgroundColor3")
+    local bH = create("Frame",{ Parent=bIn, Position=dim2(0,1,0,1),
+        Size=dim2(1,-2,1,-2), BorderSizePixel=0, BackgroundColor3=rgb(255,255,255) })
+    local bG = create("UIGradient",{ Parent=bH, Rotation=90,
+        Color=ColorSequence.new{
+            ColorSequenceKeypoint.new(0,themes.preset.low_contrast),
+            ColorSequenceKeypoint.new(1,themes.preset.high_contrast),
+        }})
+    applyTheme(bG,"contrast","Color")
+    local badgeBtn = create("TextButton",{
+        Parent=bH, FontFace=customFont,
+        Text=defaultKey.Name, TextColor3=themes.preset.accent,
+        BackgroundTransparency=1, Size=dim2(1,0,1,0),
+        TextSize=10, AutoButtonColor=false, TextXAlignment=Enum.TextXAlignment.Center,
     })
-    applyTheme(accentBar, "accent", "BackgroundColor3")
+    applyTheme(badgeBtn,"accent","TextColor3")
+    local overlay = create("Frame",{ Parent=bH, Size=dim2(1,0,1,0),
+        BackgroundColor3=themes.preset.accent,
+        BackgroundTransparency=1, BorderSizePixel=0, ZIndex=5 })
+    applyTheme(overlay,"accent","BackgroundColor3")
 
-    -- Label
-    create("TextLabel", {
-        Parent = cardHolder, FontFace = customFont, Text = label,
-        TextColor3 = themes.preset.text, BackgroundTransparency = 1,
-        Position = dim2(0, 0, 0, 0), Size = dim2(1, -70, 1, 0),
-        TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left
-    })
+    local curKey     = defaultKey
+    local listening  = false
+    local listenConn = nil
 
-    -- Key badge: outline → inline → holder
-    local badgeOutline = create("Frame", {
-        Parent = cardHolder,
-        AnchorPoint = vec2(1, 0.5),
-        Position = dim2(1, 0, 0.5, 0),
-        Size = dim2(0, 66, 0, 16),
-        BackgroundColor3 = themes.preset.outline, BorderSizePixel = 0
-    })
-    applyTheme(badgeOutline, "outline", "BackgroundColor3")
+    local function stopListening(cancelled)
+        if not listening then return end
+        listening = false
+        if listenConn then listenConn:Disconnect(); listenConn=nil end
+        tween(badgeBtn,{ TextColor3=themes.preset.accent })
+        tween(overlay,{ BackgroundTransparency=1 })
+        if cancelled then badgeBtn.Text=curKey.Name end
+    end
 
-    local badgeInline = create("Frame", {
-        Parent = badgeOutline, Position = dim2(0, 1, 0, 1),
-        Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
-        BackgroundColor3 = themes.preset.inline
-    })
-    applyTheme(badgeInline, "inline", "BackgroundColor3")
-
-    local badgeHolder = create("Frame", {
-        Parent = badgeInline, Position = dim2(0, 1, 0, 1),
-        Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
-        BackgroundColor3 = rgb(255, 255, 255)
-    })
-    local badgeGrad = create("UIGradient", {
-        Parent = badgeHolder, Rotation = 90,
-        Color = ColorSequence.new{
-            ColorSequenceKeypoint.new(0, themes.preset.low_contrast),
-            ColorSequenceKeypoint.new(1, themes.preset.high_contrast)
-        }
-    })
-    applyTheme(badgeGrad, "contrast", "Color")
-
-    local badgeText = create("TextButton", {
-        Parent = badgeHolder, FontFace = customFont,
-        Text = defaultKey.Name, TextColor3 = themes.preset.accent,
-        BackgroundTransparency = 1, Size = dim2(1, 0, 1, 0),
-        TextSize = 10, AutoButtonColor = false,
-        TextXAlignment = Enum.TextXAlignment.Center
-    })
-    applyTheme(badgeText, "accent", "TextColor3")
-
-    -- Listening pulse overlay
-    local listeningOverlay = create("Frame", {
-        Parent = badgeHolder, Size = dim2(1, 0, 1, 0),
-        BackgroundColor3 = themes.preset.accent,
-        BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 5
-    })
-    applyTheme(listeningOverlay, "accent", "BackgroundColor3")
-
-    local currentKey = defaultKey
-    local listening = false
-
-    badgeText.MouseButton1Click:Connect(function()
+    local function startListening()
         if listening then return end
-        listening = true
-        badgeText.Text = "..."
-        badgeText.TextColor3 = themes.preset.text
-        tween(listeningOverlay, { BackgroundTransparency = 0.82 })
-        local c
-        c = UserInputService.InputBegan:Connect(function(input, processed)
+        listening     = true
+        badgeBtn.Text = "..."
+        tween(badgeBtn,{ TextColor3=themes.preset.text })
+        tween(overlay,{ BackgroundTransparency=0.82 })
+
+        listenConn = UserInputService.InputBegan:Connect(function(inp, processed)
             if processed then return end
-            if input.UserInputType == Enum.UserInputType.Keyboard then
-                currentKey = input.KeyCode
-                badgeText.Text = input.KeyCode.Name
-                tween(badgeText,        { TextColor3 = themes.preset.accent })
-                tween(listeningOverlay, { BackgroundTransparency = 1 })
-                listening = false
-                c:Disconnect()
-                if callback then callback(currentKey) end
+            if inp.UserInputType == Enum.UserInputType.MouseButton1 then
+                stopListening(true); return
             end
+            if inp.UserInputType ~= Enum.UserInputType.Keyboard then return end
+            if inp.KeyCode == Enum.KeyCode.Unknown then return end
+            curKey        = inp.KeyCode
+            badgeBtn.Text = inp.KeyCode.Name
+            stopListening(false)
+            safeCall(callback, curKey)
         end)
+    end
+
+    badgeBtn.MouseButton1Click:Connect(startListening)
+    badgeBtn.MouseEnter:Connect(function() tween(bH,{BackgroundColor3=themes.preset.low_contrast}) end)
+    badgeBtn.MouseLeave:Connect(function()
+        if not listening then tween(bH,{BackgroundColor3=rgb(255,255,255)}) end
     end)
 
-    -- Hover overlay on badge (white fade, no gradient conflict)
-    local badgeHoverOverlay = Instance.new("Frame")
-    badgeHoverOverlay.Size = dim2(1, 0, 1, 0)
-    badgeHoverOverlay.BackgroundColor3 = rgb(255, 255, 255)
-    badgeHoverOverlay.BackgroundTransparency = 1
-    badgeHoverOverlay.BorderSizePixel = 0
-    badgeHoverOverlay.ZIndex = 6
-    badgeHoverOverlay.Parent = badgeHolder
-
-    badgeText.MouseEnter:Connect(function()
-        tween(badgeHoverOverlay, { BackgroundTransparency = 0.88 })
-    end)
-    badgeText.MouseLeave:Connect(function()
-        if not listening then
-            tween(badgeHoverOverlay, { BackgroundTransparency = 1 })
-        end
-    end)
-
-    return cardOutline, function() return currentKey end
+    return card, function() return curKey end
 end
 
-local function _makeColorPicker(parent, label, defaultColor, callback, order)
-    -- Card shell
-    local cardOutline = create("Frame", {
-        Parent = parent, Name = label:gsub(" ", "_"),
-        Size = dim2(1, 0, 0, 28), BorderSizePixel = 0,
-        BackgroundColor3 = themes.preset.outline, LayoutOrder = order or 0
-    })
-    applyTheme(cardOutline, "outline", "BackgroundColor3")
+-- ── Color picker – fix #5 (only fire on enterPressed) ─────────────────────────
+local function _makeColorPicker(parent, label, default, callback, order)
+    local card, holder = makeCard(parent, 28, order)
+    card.Name = label:gsub(" ","_")
+    create("UIPadding",{ Parent=holder, PaddingLeft=dim(0,7), PaddingRight=dim(0,7) })
+    makeAccentBar(holder, true)
 
-    local cardInline = create("Frame", {
-        Parent = cardOutline, Position = dim2(0, 1, 0, 1),
-        Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
-        BackgroundColor3 = themes.preset.inline
-    })
-    applyTheme(cardInline, "inline", "BackgroundColor3")
-
-    local cardHolder = create("Frame", {
-        Parent = cardInline, Position = dim2(0, 1, 0, 1),
-        Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
-        BackgroundColor3 = rgb(255, 255, 255)
-    })
-    local cardGradient = create("UIGradient", {
-        Parent = cardHolder, Rotation = 90,
-        Color = ColorSequence.new{
-            ColorSequenceKeypoint.new(0, themes.preset.low_contrast),
-            ColorSequenceKeypoint.new(1, themes.preset.high_contrast)
-        }
-    })
-    applyTheme(cardGradient, "contrast", "Color")
-    create("UIPadding", {
-        Parent = cardHolder,
-        PaddingLeft = dim(0, 7), PaddingRight = dim(0, 7),
-        PaddingTop = dim(0, 0), PaddingBottom = dim(0, 0)
+    create("TextLabel",{
+        Parent=holder, FontFace=customFont, Text=label,
+        TextColor3=themes.preset.text, BackgroundTransparency=1,
+        Position=dim2(0,0,0,0), Size=dim2(1,-110,1,0),
+        TextSize=12, TextXAlignment=Enum.TextXAlignment.Left,
     })
 
-    -- Accent bar parented to cardInline for full card height
-    local accentBar = create("Frame", {
-        Parent = cardInline, Size = dim2(0, 2, 1, 0), Position = dim2(0, 0, 0, 0),
-        BackgroundColor3 = themes.preset.accent, BorderSizePixel = 0, ZIndex = 5
-    })
-    applyTheme(accentBar, "accent", "BackgroundColor3")
+    local swOut = create("Frame",{ Parent=holder, AnchorPoint=vec2(1,0.5),
+        Position=dim2(1,0,0.5,0), Size=dim2(0,18,0,18),
+        BackgroundColor3=themes.preset.outline, BorderSizePixel=0 })
+    applyTheme(swOut,"outline","BackgroundColor3")
+    local swIn = create("Frame",{ Parent=swOut, Position=dim2(0,1,0,1),
+        Size=dim2(1,-2,1,-2), BorderSizePixel=0, BackgroundColor3=themes.preset.inline })
+    applyTheme(swIn,"inline","BackgroundColor3")
+    local swatch = create("Frame",{ Parent=swIn, Position=dim2(0,1,0,1),
+        Size=dim2(1,-2,1,-2), BorderSizePixel=0, BackgroundColor3=default })
 
-    -- Label
-    create("TextLabel", {
-        Parent = cardHolder, FontFace = customFont, Text = label,
-        TextColor3 = themes.preset.text, BackgroundTransparency = 1,
-        Position = dim2(0, 0, 0, 0), Size = dim2(1, -110, 1, 0),
-        TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left
+    local iOut = create("Frame",{ Parent=holder, AnchorPoint=vec2(1,0.5),
+        Position=dim2(1,-22,0.5,0), Size=dim2(0,82,0,16),
+        BackgroundColor3=themes.preset.outline, BorderSizePixel=0 })
+    applyTheme(iOut,"outline","BackgroundColor3")
+    local iIn = create("Frame",{ Parent=iOut, Position=dim2(0,1,0,1),
+        Size=dim2(1,-2,1,-2), BorderSizePixel=0, BackgroundColor3=themes.preset.inline })
+    applyTheme(iIn,"inline","BackgroundColor3")
+    local iH = create("Frame",{ Parent=iIn, Position=dim2(0,1,0,1),
+        Size=dim2(1,-2,1,-2), BorderSizePixel=0, BackgroundColor3=rgb(255,255,255) })
+    local iG = create("UIGradient",{ Parent=iH, Rotation=90,
+        Color=ColorSequence.new{
+            ColorSequenceKeypoint.new(0,themes.preset.low_contrast),
+            ColorSequenceKeypoint.new(1,themes.preset.high_contrast),
+        }})
+    applyTheme(iG,"contrast","Color")
+    local hexBox = create("TextBox",{
+        Parent=iH, FontFace=customFont,
+        Text="#"..default:ToHex():upper(),
+        TextColor3=themes.preset.accent, BackgroundTransparency=1,
+        Size=dim2(1,-4,1,0), Position=dim2(0,2,0,0),
+        TextSize=10, TextXAlignment=Enum.TextXAlignment.Center,
+        ClearTextOnFocus=false, BorderSizePixel=0,
     })
+    applyTheme(hexBox,"accent","TextColor3")
 
-    -- Swatch: outline → inline → color frame
-    local swatchOutline = create("Frame", {
-        Parent = cardHolder, AnchorPoint = vec2(1, 0.5),
-        Position = dim2(1, 0, 0.5, 0),
-        Size = dim2(0, 18, 0, 18),
-        BackgroundColor3 = themes.preset.outline, BorderSizePixel = 0
-    })
-    applyTheme(swatchOutline, "outline", "BackgroundColor3")
-    local swatchInline = create("Frame", {
-        Parent = swatchOutline, Position = dim2(0, 1, 0, 1),
-        Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
-        BackgroundColor3 = themes.preset.inline
-    })
-    applyTheme(swatchInline, "inline", "BackgroundColor3")
-    local swatch = create("Frame", {
-        Parent = swatchInline, Position = dim2(0, 1, 0, 1),
-        Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
-        BackgroundColor3 = defaultColor
-    })
-
-    -- Hex input: outline → inline → holder
-    local inputOutline = create("Frame", {
-        Parent = cardHolder, AnchorPoint = vec2(1, 0.5),
-        Position = dim2(1, -22, 0.5, 0),
-        Size = dim2(0, 82, 0, 16),
-        BackgroundColor3 = themes.preset.outline, BorderSizePixel = 0
-    })
-    applyTheme(inputOutline, "outline", "BackgroundColor3")
-    local inputInline = create("Frame", {
-        Parent = inputOutline, Position = dim2(0, 1, 0, 1),
-        Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
-        BackgroundColor3 = themes.preset.inline
-    })
-    applyTheme(inputInline, "inline", "BackgroundColor3")
-    local inputHolder = create("Frame", {
-        Parent = inputInline, Position = dim2(0, 1, 0, 1),
-        Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
-        BackgroundColor3 = rgb(255, 255, 255)
-    })
-    local inputGrad = create("UIGradient", {
-        Parent = inputHolder, Rotation = 90,
-        Color = ColorSequence.new{
-            ColorSequenceKeypoint.new(0, themes.preset.low_contrast),
-            ColorSequenceKeypoint.new(1, themes.preset.high_contrast)
-        }
-    })
-    applyTheme(inputGrad, "contrast", "Color")
-    local hexInput = create("TextBox", {
-        Parent = inputHolder, FontFace = customFont,
-        Text = "#" .. defaultColor:ToHex(),
-        TextColor3 = themes.preset.accent,
-        BackgroundTransparency = 1,
-        Size = dim2(1, -4, 1, 0), Position = dim2(0, 2, 0, 0),
-        TextSize = 10, TextXAlignment = Enum.TextXAlignment.Center,
-        ClearTextOnFocus = false, BorderSizePixel = 0
-    })
-    applyTheme(hexInput, "accent", "TextColor3")
-
-    local currentColor = defaultColor
-    hexInput.FocusLost:Connect(function()
-        local text = hexInput.Text:gsub("#", "")
-        if #text == 6 and text:match("^%x+$") then
-            currentColor = hex("#" .. text)
-            swatch.BackgroundColor3 = currentColor
-            hexInput.Text = "#" .. text:upper()
-            if callback then callback(currentColor) end
+    local cur = default
+    hexBox.FocusLost:Connect(function(enterPressed)
+        local raw = hexBox.Text:gsub("#","")
+        if #raw==6 and raw:match("^%x+$") then
+            cur = hex("#"..raw)
+            swatch.BackgroundColor3 = cur
+            hexBox.Text = "#"..raw:upper()
+            if enterPressed then safeCall(callback, cur) end
         else
-            hexInput.Text = "#" .. currentColor:ToHex():upper()
+            hexBox.Text = "#"..cur:ToHex():upper()
         end
     end)
 
-    return cardOutline, function() return currentColor end
+    return card, function() return cur end
 end
 
--- ── Theme tab color picker (the bordered, full-row ones) ───────────────────────
+-- ── Theme-tab color picker ────────────────────────────────────────────────────
 local function _makeThemeColorPicker(parent, name, themeKey, order)
-    local pickerOutline = create("Frame", {
-        Parent = parent, Name = name .. "_picker",
-        Size = dim2(1, 0, 0, 40), BorderSizePixel = 0,
-        BackgroundColor3 = themes.preset.outline, LayoutOrder = order
-    })
-    applyTheme(pickerOutline, "outline", "BackgroundColor3")
-    local pickerInline = create("Frame", {
-        Parent = pickerOutline, Position = dim2(0, 1, 0, 1),
-        Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
-        BackgroundColor3 = themes.preset.inline
-    })
-    applyTheme(pickerInline, "inline", "BackgroundColor3")
-    local pickerHolder = create("Frame", {
-        Parent = pickerInline, Position = dim2(0, 1, 0, 1),
-        Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
-        BackgroundColor3 = rgb(255, 255, 255)
-    })
-    local pickerGradient = create("UIGradient", {
-        Parent = pickerHolder, Rotation = 90,
-        Color = ColorSequence.new{
-            ColorSequenceKeypoint.new(0, themes.preset.low_contrast),
-            ColorSequenceKeypoint.new(1, themes.preset.high_contrast)
-        }
-    })
-    applyTheme(pickerGradient, "contrast", "Color")
-    create("UIPadding", { Parent = pickerHolder,
-        PaddingLeft = dim(0, 5), PaddingRight = dim(0, 5),
-        PaddingTop = dim(0, 5), PaddingBottom = dim(0, 5)
-    })
-    create("TextLabel", {
-        Parent = pickerHolder, FontFace = customFont, Text = name,
-        TextColor3 = themes.preset.text, BackgroundTransparency = 1,
-        Position = dim2(0, 0, 0, 0), Size = dim2(0, 80, 1, 0),
-        TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left
-    })
+    local pOut = create("Frame",{ Parent=parent, Name=name.."_picker",
+        Size=dim2(1,0,0,40), BorderSizePixel=0,
+        BackgroundColor3=themes.preset.outline, LayoutOrder=order })
+    applyTheme(pOut,"outline","BackgroundColor3")
+    local pIn = create("Frame",{ Parent=pOut, Position=dim2(0,1,0,1),
+        Size=dim2(1,-2,1,-2), BorderSizePixel=0, BackgroundColor3=themes.preset.inline })
+    applyTheme(pIn,"inline","BackgroundColor3")
+    local pH = create("Frame",{ Parent=pIn, Position=dim2(0,1,0,1),
+        Size=dim2(1,-2,1,-2), BorderSizePixel=0, BackgroundColor3=rgb(255,255,255) })
+    local pG = create("UIGradient",{ Parent=pH, Rotation=90,
+        Color=ColorSequence.new{
+            ColorSequenceKeypoint.new(0,themes.preset.low_contrast),
+            ColorSequenceKeypoint.new(1,themes.preset.high_contrast),
+        }})
+    applyTheme(pG,"contrast","Color")
+    create("UIPadding",{ Parent=pH,
+        PaddingLeft=dim(0,5), PaddingRight=dim(0,5),
+        PaddingTop=dim(0,5),  PaddingBottom=dim(0,5) })
+    create("TextLabel",{ Parent=pH, FontFace=customFont, Text=name,
+        TextColor3=themes.preset.text, BackgroundTransparency=1,
+        Position=dim2(0,0,0,0), Size=dim2(0,80,1,0),
+        TextSize=12, TextXAlignment=Enum.TextXAlignment.Left })
 
-    -- Preview swatch
-    local previewOutline = create("Frame", {
-        Parent = pickerHolder, Position = dim2(0, 85, 0, 0),
-        Size = dim2(0, 30, 1, 0), BackgroundColor3 = themes.preset.outline, BorderSizePixel = 0
-    })
-    applyTheme(previewOutline, "outline", "BackgroundColor3")
-    local previewInline = create("Frame", {
-        Parent = previewOutline, Position = dim2(0, 1, 0, 1),
-        Size = dim2(1, -2, 1, -2), BackgroundColor3 = themes.preset.inline, BorderSizePixel = 0
-    })
-    applyTheme(previewInline, "inline", "BackgroundColor3")
-    local preview = create("Frame", {
-        Parent = previewInline, Position = dim2(0, 1, 0, 1),
-        Size = dim2(1, -2, 1, -2), BackgroundColor3 = themes.preset[themeKey], BorderSizePixel = 0
-    })
+    local pvOut = create("Frame",{ Parent=pH, Position=dim2(0,85,0,0),
+        Size=dim2(0,30,1,0), BackgroundColor3=themes.preset.outline, BorderSizePixel=0 })
+    applyTheme(pvOut,"outline","BackgroundColor3")
+    local pvIn = create("Frame",{ Parent=pvOut, Position=dim2(0,1,0,1),
+        Size=dim2(1,-2,1,-2), BackgroundColor3=themes.preset.inline, BorderSizePixel=0 })
+    applyTheme(pvIn,"inline","BackgroundColor3")
+    local preview = create("Frame",{ Parent=pvIn, Position=dim2(0,1,0,1),
+        Size=dim2(1,-2,1,-2), BackgroundColor3=themes.preset[themeKey], BorderSizePixel=0 })
 
-    -- Hex input
-    local inputOutline = create("Frame", {
-        Parent = pickerHolder, Position = dim2(0, 120, 0, 0),
-        Size = dim2(1, -120, 1, 0), BackgroundColor3 = themes.preset.outline, BorderSizePixel = 0
-    })
-    applyTheme(inputOutline, "outline", "BackgroundColor3")
-    local inputInline = create("Frame", {
-        Parent = inputOutline, Position = dim2(0, 1, 0, 1),
-        Size = dim2(1, -2, 1, -2), BackgroundColor3 = themes.preset.inline, BorderSizePixel = 0
-    })
-    applyTheme(inputInline, "inline", "BackgroundColor3")
-    local inputHolder = create("Frame", {
-        Parent = inputInline, Position = dim2(0, 1, 0, 1),
-        Size = dim2(1, -2, 1, -2), BackgroundColor3 = rgb(255, 255, 255), BorderSizePixel = 0
-    })
-    local inputGradient = create("UIGradient", {
-        Parent = inputHolder, Rotation = 90,
-        Color = ColorSequence.new{
-            ColorSequenceKeypoint.new(0, themes.preset.low_contrast),
-            ColorSequenceKeypoint.new(1, themes.preset.high_contrast)
-        }
-    })
-    applyTheme(inputGradient, "contrast", "Color")
-    local hexInput = create("TextBox", {
-        Parent = inputHolder, FontFace = customFont,
-        TextColor3 = themes.preset.text,
-        Text = "#" .. themes.preset[themeKey]:ToHex(),
-        PlaceholderText = "#RRGGBB", BackgroundTransparency = 1,
-        Size = dim2(1, -4, 1, 0), Position = dim2(0, 2, 0, 0),
-        TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left,
-        ClearTextOnFocus = false, BorderSizePixel = 0
-    })
-    hexInput.FocusLost:Connect(function()
-        local text = hexInput.Text:gsub("#", "")
-        if #text == 6 and text:match("^%x+$") then
-            local newColor = hex("#" .. text)
-            themes.preset[themeKey] = newColor
-            preview.BackgroundColor3 = newColor
-            hexInput.Text = "#" .. text:upper()
+    local hOut = create("Frame",{ Parent=pH, Position=dim2(0,120,0,0),
+        Size=dim2(1,-120,1,0), BackgroundColor3=themes.preset.outline, BorderSizePixel=0 })
+    applyTheme(hOut,"outline","BackgroundColor3")
+    local hIn = create("Frame",{ Parent=hOut, Position=dim2(0,1,0,1),
+        Size=dim2(1,-2,1,-2), BackgroundColor3=themes.preset.inline, BorderSizePixel=0 })
+    applyTheme(hIn,"inline","BackgroundColor3")
+    local hH = create("Frame",{ Parent=hIn, Position=dim2(0,1,0,1),
+        Size=dim2(1,-2,1,-2), BackgroundColor3=rgb(255,255,255), BorderSizePixel=0 })
+    local hG = create("UIGradient",{ Parent=hH, Rotation=90,
+        Color=ColorSequence.new{
+            ColorSequenceKeypoint.new(0,themes.preset.low_contrast),
+            ColorSequenceKeypoint.new(1,themes.preset.high_contrast),
+        }})
+    applyTheme(hG,"contrast","Color")
+    local hexBox = create("TextBox",{ Parent=hH, FontFace=customFont,
+        TextColor3=themes.preset.text,
+        Text="#"..themes.preset[themeKey]:ToHex():upper(),
+        PlaceholderText="#RRGGBB", BackgroundTransparency=1,
+        Size=dim2(1,-4,1,0), Position=dim2(0,2,0,0),
+        TextSize=12, TextXAlignment=Enum.TextXAlignment.Left,
+        ClearTextOnFocus=false, BorderSizePixel=0 })
+    hexBox.FocusLost:Connect(function()
+        local raw = hexBox.Text:gsub("#","")
+        if #raw==6 and raw:match("^%x+$") then
+            local c = hex("#"..raw)
+            themes.preset[themeKey] = c
+            preview.BackgroundColor3 = c
+            hexBox.Text = "#"..raw:upper()
             updateTheme()
         else
-            hexInput.Text = "#" .. themes.preset[themeKey]:ToHex()
+            hexBox.Text = "#"..themes.preset[themeKey]:ToHex():upper()
         end
     end)
-    return pickerOutline
+    return pOut
 end
 
--- ── Scrollable tab content scaffold ───────────────────────────────────────────
+-- ── Scroll scaffold ───────────────────────────────────────────────────────────
 local function _makeScrollContent(parent)
-    local content = create("Frame", {
-        Parent = parent, Size = dim2(1, 0, 1, 0),
-        BackgroundTransparency = 1, BorderSizePixel = 0, Visible = false
+    local content = create("Frame",{ Parent=parent, Size=dim2(1,0,1,0),
+        BackgroundTransparency=1, BorderSizePixel=0, Visible=false })
+    local scroll = create("ScrollingFrame",{
+        Parent=content, ScrollBarImageColor3=themes.preset.accent,
+        Active=true, AutomaticCanvasSize=Enum.AutomaticSize.Y,
+        ScrollBarThickness=2,
+        MidImage="rbxassetid://103468666327206",
+        TopImage="rbxassetid://103468666327206",
+        BottomImage="rbxassetid://103468666327206",
+        Size=dim2(1,0,1,0), BackgroundTransparency=1,
+        BackgroundColor3=rgb(255,255,255),
+        BorderColor3=rgb(0,0,0), BorderSizePixel=0,
+        CanvasSize=dim2(0,0,0,0), ClipsDescendants=true,
     })
-    local scroll = create("ScrollingFrame", {
-        Parent = content, ScrollBarImageColor3 = themes.preset.accent,
-        Active = true, AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        ScrollBarThickness = 2,
-        MidImage = "rbxassetid://103468666327206",
-        TopImage = "rbxassetid://103468666327206",
-        BottomImage = "rbxassetid://103468666327206",
-        Size = dim2(1, 0, 1, 0), BackgroundTransparency = 1,
-        BackgroundColor3 = rgb(255, 255, 255),
-        BorderColor3 = rgb(0, 0, 0), BorderSizePixel = 0,
-        CanvasSize = dim2(0, 0, 0, 0)
-    })
-    applyTheme(scroll, "accent", "ScrollBarImageColor3")
-    local container = create("Frame", {
-        Parent = scroll, Size = dim2(1, 0, 1, 0),
-        AutomaticSize = Enum.AutomaticSize.Y,
-        BackgroundTransparency = 1, BorderSizePixel = 0
-    })
-    create("UIListLayout", {
-        Parent = container, Padding = dim(0, 8),
-        HorizontalAlignment = Enum.HorizontalAlignment.Center,
-        SortOrder = Enum.SortOrder.LayoutOrder
-    })
-    create("UIPadding", {
-        Parent = container, PaddingTop = dim(0, 5), PaddingBottom = dim(0, 5),
-        PaddingLeft = dim(0, 5), PaddingRight = dim(0, 5)
-    })
+    applyTheme(scroll,"accent","ScrollBarImageColor3")
+    local container = create("Frame",{ Parent=scroll, Size=dim2(1,0,1,0),
+        AutomaticSize=Enum.AutomaticSize.Y,
+        BackgroundTransparency=1, BorderSizePixel=0 })
+    create("UIListLayout",{ Parent=container, Padding=dim(0,8),
+        HorizontalAlignment=Enum.HorizontalAlignment.Center,
+        SortOrder=Enum.SortOrder.LayoutOrder })
+    create("UIPadding",{ Parent=container,
+        PaddingTop=dim(0,5), PaddingBottom=dim(0,5),
+        PaddingLeft=dim(0,5), PaddingRight=dim(0,5) })
     return content, container
 end
 
--- ── Players tab builder ────────────────────────────────────────────────────────
+-- ── Players tab ───────────────────────────────────────────────────────────────
 local function _buildPlayersTab(parent)
-    local playersContent = create("Frame", {
-        Parent = parent, Size = dim2(1, 0, 1, 0),
-        BackgroundTransparency = 1, BorderSizePixel = 0, Visible = false
-    })
+    local pc = create("Frame",{ Parent=parent, Size=dim2(1,0,1,0),
+        BackgroundTransparency=1, BorderSizePixel=0, Visible=false })
 
-    -- Scroll list (sits above the search bar)
-    local scrollFrame = create("ScrollingFrame", {
-        Parent = playersContent, ScrollBarImageColor3 = themes.preset.accent,
-        Active = true, AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        ScrollBarThickness = 2,
-        MidImage = "rbxassetid://103468666327206",
-        TopImage = "rbxassetid://103468666327206",
-        BottomImage = "rbxassetid://103468666327206",
-        Size = dim2(1, 0, 1, -30),
-        BackgroundTransparency = 1, BackgroundColor3 = rgb(255, 255, 255),
-        BorderColor3 = rgb(0, 0, 0), BorderSizePixel = 0,
-        CanvasSize = dim2(0, 0, 0, 0),
-        ScrollingEnabled = true, ClipsDescendants = true
+    local sf = create("ScrollingFrame",{
+        Parent=pc, ScrollBarImageColor3=themes.preset.accent,
+        Active=true, AutomaticCanvasSize=Enum.AutomaticSize.Y,
+        ScrollBarThickness=2,
+        MidImage="rbxassetid://103468666327206",
+        TopImage="rbxassetid://103468666327206",
+        BottomImage="rbxassetid://103468666327206",
+        Size=dim2(1,0,1,-30), BackgroundTransparency=1,
+        BackgroundColor3=rgb(255,255,255),
+        BorderColor3=rgb(0,0,0), BorderSizePixel=0,
+        CanvasSize=dim2(0,0,0,0), ScrollingEnabled=true, ClipsDescendants=true,
     })
-    applyTheme(scrollFrame, "accent", "ScrollBarImageColor3")
+    applyTheme(sf,"accent","ScrollBarImageColor3")
+    local plc = create("Frame",{ Parent=sf, Name="player_list",
+        Size=dim2(1,0,1,0), AutomaticSize=Enum.AutomaticSize.Y,
+        BorderSizePixel=0, BackgroundTransparency=1, BackgroundColor3=rgb(255,255,255) })
+    create("UIListLayout",{ Parent=plc, Padding=dim(0,4),
+        HorizontalAlignment=Enum.HorizontalAlignment.Center,
+        SortOrder=Enum.SortOrder.LayoutOrder })
+    create("UIPadding",{ Parent=plc,
+        PaddingBottom=dim(0,5), PaddingTop=dim(0,5),
+        PaddingLeft=dim(0,5),   PaddingRight=dim(0,5) })
 
-    local playerListContainer = create("Frame", {
-        Parent = scrollFrame, Name = "player_list",
-        Size = dim2(1, 0, 1, 0), AutomaticSize = Enum.AutomaticSize.Y,
-        BorderSizePixel = 0, BackgroundTransparency = 1, BackgroundColor3 = rgb(255, 255, 255)
-    })
-    create("UIListLayout", {
-        Parent = playerListContainer, Padding = dim(0, 4),
-        HorizontalAlignment = Enum.HorizontalAlignment.Center,
-        SortOrder = Enum.SortOrder.LayoutOrder
-    })
-    create("UIPadding", {
-        Parent = playerListContainer,
-        PaddingBottom = dim(0, 5), PaddingTop = dim(0, 5),
-        PaddingLeft = dim(0, 5), PaddingRight = dim(0, 5)
-    })
+    -- search bar
+    local ss = create("Frame",{ Parent=pc, Position=dim2(0,0,1,-25),
+        Size=dim2(1,0,0,25), BorderSizePixel=0,
+        BackgroundTransparency=1, BackgroundColor3=rgb(255,255,255) })
+    create("UIPadding",{ Parent=ss,
+        PaddingBottom=dim(0,5), PaddingTop=dim(0,5),
+        PaddingLeft=dim(0,5),   PaddingRight=dim(0,5) })
+    local sOut = create("Frame",{ Parent=ss, Size=dim2(1,0,0,15),
+        BorderSizePixel=0, BackgroundColor3=themes.preset.outline })
+    applyTheme(sOut,"outline","BackgroundColor3")
+    local sIn = create("Frame",{ Parent=sOut, Position=dim2(0,1,0,1),
+        Size=dim2(1,-2,1,-2), BorderSizePixel=0, BackgroundColor3=themes.preset.inline })
+    applyTheme(sIn,"inline","BackgroundColor3")
+    local sH = create("Frame",{ Parent=sIn, Position=dim2(0,1,0,1),
+        Size=dim2(1,-2,1,-2), BorderSizePixel=0, BackgroundColor3=rgb(255,255,255) })
+    local sG = create("UIGradient",{ Parent=sH, Rotation=90,
+        Color=ColorSequence.new{
+            ColorSequenceKeypoint.new(0,themes.preset.low_contrast),
+            ColorSequenceKeypoint.new(1,themes.preset.high_contrast),
+        }})
+    applyTheme(sG,"contrast","Color")
+    local searchBox = create("TextBox",{ Parent=sH, FontFace=customFont,
+        TextColor3=themes.preset.text, Text="",
+        PlaceholderText="Search players...",
+        PlaceholderColor3=rgb(100,100,100), BackgroundTransparency=1,
+        Size=dim2(1,-4,1,0), Position=dim2(0,2,0,-1),
+        BorderSizePixel=0, TextXAlignment=Enum.TextXAlignment.Left,
+        TextSize=12, ClearTextOnFocus=false, BackgroundColor3=rgb(255,255,255) })
 
-    -- Search bar
-    local searchSection = create("Frame", {
-        Parent = playersContent, Name = "search_section",
-        Position = dim2(0, 0, 1, -25), Size = dim2(1, 0, 0, 25),
-        BorderSizePixel = 0, BackgroundTransparency = 1, BackgroundColor3 = rgb(255, 255, 255)
-    })
-    create("UIPadding", {
-        Parent = searchSection,
-        PaddingBottom = dim(0, 5), PaddingTop = dim(0, 5),
-        PaddingLeft = dim(0, 5), PaddingRight = dim(0, 5)
-    })
-    local searchOutline = create("Frame", {
-        Parent = searchSection, Size = dim2(1, 0, 0, 15),
-        BorderSizePixel = 0, BackgroundColor3 = themes.preset.outline
-    })
-    applyTheme(searchOutline, "outline", "BackgroundColor3")
-    local searchInline = create("Frame", {
-        Parent = searchOutline, Position = dim2(0, 1, 0, 1),
-        Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
-        BackgroundColor3 = themes.preset.inline
-    })
-    applyTheme(searchInline, "inline", "BackgroundColor3")
-    local searchHolder = create("Frame", {
-        Parent = searchInline, Position = dim2(0, 1, 0, 1),
-        Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
-        BackgroundColor3 = rgb(255, 255, 255)
-    })
-    local searchGradient = create("UIGradient", {
-        Parent = searchHolder, Rotation = 90,
-        Color = ColorSequence.new{
-            ColorSequenceKeypoint.new(0, themes.preset.low_contrast),
-            ColorSequenceKeypoint.new(1, themes.preset.high_contrast)
-        }
-    })
-    applyTheme(searchGradient, "contrast", "Color")
-    local searchBox = create("TextBox", {
-        Parent = searchHolder, FontFace = customFont,
-        TextColor3 = themes.preset.text, Text = "",
-        PlaceholderText = "Search players...",
-        PlaceholderColor3 = rgb(100, 100, 100),
-        BackgroundTransparency = 1,
-        Size = dim2(1, -4, 1, 0), Position = dim2(0, 2, 0, -1),
-        BorderSizePixel = 0, TextXAlignment = Enum.TextXAlignment.Left,
-        TextSize = 12, ClearTextOnFocus = false, BackgroundColor3 = rgb(255, 255, 255)
-    })
-
-    -- Player entry builder
-    local function createPlayerEntry(player)
-        local entryOutline = create("Frame", {
-            Parent = playerListContainer, Name = player.Name,
-            Size = dim2(1, 0, 0, 50), BorderSizePixel = 0,
-            BackgroundColor3 = themes.preset.outline
-        })
-        applyTheme(entryOutline, "outline", "BackgroundColor3")
-        local entryInline = create("Frame", {
-            Parent = entryOutline, Position = dim2(0, 1, 0, 1),
-            Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
-            BackgroundColor3 = themes.preset.inline
-        })
-        applyTheme(entryInline, "inline", "BackgroundColor3")
-        local entryHolder = create("Frame", {
-            Parent = entryInline, Position = dim2(0, 1, 0, 1),
-            Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
-            BackgroundColor3 = rgb(255, 255, 255)
-        })
-        local entryGradient = create("UIGradient", {
-            Parent = entryHolder, Rotation = 90,
-            Color = ColorSequence.new{
-                ColorSequenceKeypoint.new(0, themes.preset.low_contrast),
-                ColorSequenceKeypoint.new(1, themes.preset.high_contrast)
-            }
-        })
-        applyTheme(entryGradient, "contrast", "Color")
-        local hoverOverlay = create("Frame", {
-            Parent = entryHolder, Size = dim2(1, 0, 1, 0),
-            BackgroundColor3 = rgb(0, 0, 0), BackgroundTransparency = 1,
-            BorderSizePixel = 0, ZIndex = 2
-        })
-
-        -- Avatar
-        local avatarOutline = create("Frame", {
-            Parent = entryHolder, Position = dim2(0, 5, 0.5, -20),
-            Size = dim2(0, 40, 0, 40), BorderSizePixel = 0,
-            BackgroundColor3 = themes.preset.outline, ZIndex = 3
-        })
-        applyTheme(avatarOutline, "outline", "BackgroundColor3")
-        local avatarInline = create("Frame", {
-            Parent = avatarOutline, Position = dim2(0, 1, 0, 1),
-            Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
-            BackgroundColor3 = themes.preset.inline, ZIndex = 3
-        })
-        applyTheme(avatarInline, "inline", "BackgroundColor3")
-        local avatar = create("ImageLabel", {
-            Parent = avatarInline, Position = dim2(0, 1, 0, 1),
-            Size = dim2(1, -2, 1, -2), BackgroundTransparency = 1,
-            BorderSizePixel = 0, BackgroundColor3 = rgb(255, 255, 255), ZIndex = 3
-        })
+    local function makeEntry(player)
+        local eOut = create("Frame",{ Parent=plc, Name=player.Name,
+            Size=dim2(1,0,0,50), BorderSizePixel=0,
+            BackgroundColor3=themes.preset.outline })
+        applyTheme(eOut,"outline","BackgroundColor3")
+        local eIn = create("Frame",{ Parent=eOut, Position=dim2(0,1,0,1),
+            Size=dim2(1,-2,1,-2), BorderSizePixel=0,
+            BackgroundColor3=themes.preset.inline })
+        applyTheme(eIn,"inline","BackgroundColor3")
+        local eH = create("Frame",{ Parent=eIn, Position=dim2(0,1,0,1),
+            Size=dim2(1,-2,1,-2), BorderSizePixel=0, BackgroundColor3=rgb(255,255,255) })
+        local eG = create("UIGradient",{ Parent=eH, Rotation=90,
+            Color=ColorSequence.new{
+                ColorSequenceKeypoint.new(0,themes.preset.low_contrast),
+                ColorSequenceKeypoint.new(1,themes.preset.high_contrast),
+            }})
+        applyTheme(eG,"contrast","Color")
+        local hov = create("Frame",{ Parent=eH, Size=dim2(1,0,1,0),
+            BackgroundColor3=rgb(0,0,0), BackgroundTransparency=1,
+            BorderSizePixel=0, ZIndex=2 })
+        local aOut = create("Frame",{ Parent=eH, Position=dim2(0,5,0.5,-20),
+            Size=dim2(0,40,0,40), BorderSizePixel=0,
+            BackgroundColor3=themes.preset.outline, ZIndex=3 })
+        applyTheme(aOut,"outline","BackgroundColor3")
+        local aIn = create("Frame",{ Parent=aOut, Position=dim2(0,1,0,1),
+            Size=dim2(1,-2,1,-2), BorderSizePixel=0,
+            BackgroundColor3=themes.preset.inline, ZIndex=3 })
+        applyTheme(aIn,"inline","BackgroundColor3")
+        local avatar = create("ImageLabel",{ Parent=aIn, Position=dim2(0,1,0,1),
+            Size=dim2(1,-2,1,-2), BackgroundTransparency=1,
+            BorderSizePixel=0, BackgroundColor3=rgb(255,255,255), ZIndex=3 })
         task.spawn(function()
-            local ok, img = pcall(function()
-                return Players:GetUserThumbnailAsync(player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
+            local ok,img = pcall(function()
+                return Players:GetUserThumbnailAsync(
+                    player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
             end)
-            if ok then avatar.Image = img end
+            if ok then avatar.Image=img end
         end)
-
-        -- Text
-        create("TextLabel", {
-            Parent = entryHolder, FontFace = customFont,
-            TextColor3 = themes.preset.text, Text = player.DisplayName,
-            BackgroundTransparency = 1, Position = dim2(0, 50, 0, 8),
-            Size = dim2(1, -55, 0, 14), BorderSizePixel = 0,
-            TextXAlignment = Enum.TextXAlignment.Left, TextSize = 12,
-            TextTruncate = Enum.TextTruncate.AtEnd,
-            BackgroundColor3 = rgb(255, 255, 255), ZIndex = 3
-        })
-        create("TextLabel", {
-            Parent = entryHolder, FontFace = customFont,
-            TextColor3 = themes.preset.text, Text = "@" .. player.Name,
-            BackgroundTransparency = 1, Position = dim2(0, 50, 0, 24),
-            Size = dim2(1, -55, 0, 12), BorderSizePixel = 0,
-            TextXAlignment = Enum.TextXAlignment.Left, TextSize = 10,
-            TextTransparency = 0.3, TextTruncate = Enum.TextTruncate.AtEnd,
-            BackgroundColor3 = rgb(255, 255, 255), ZIndex = 3
-        })
-
-        -- Click overlay for hover effect
-        local clickButton = create("TextButton", {
-            Parent = entryHolder, Size = dim2(1, 0, 1, 0),
-            BackgroundTransparency = 1, Text = "",
-            BorderSizePixel = 0, AutoButtonColor = false, ZIndex = 4
-        })
-        clickButton.MouseEnter:Connect(function()
-            tween(hoverOverlay, { BackgroundTransparency = 0.7 })
-        end)
-        clickButton.MouseLeave:Connect(function()
-            tween(hoverOverlay, { BackgroundTransparency = 1 })
-        end)
-
-        return entryOutline
+        create("TextLabel",{ Parent=eH, FontFace=customFont,
+            TextColor3=themes.preset.text, Text=player.DisplayName,
+            BackgroundTransparency=1, Position=dim2(0,50,0,8),
+            Size=dim2(1,-55,0,14), BorderSizePixel=0,
+            TextXAlignment=Enum.TextXAlignment.Left, TextSize=12,
+            TextTruncate=Enum.TextTruncate.AtEnd,
+            BackgroundColor3=rgb(255,255,255), ZIndex=3 })
+        create("TextLabel",{ Parent=eH, FontFace=customFont,
+            TextColor3=themes.preset.text, Text="@"..player.Name,
+            BackgroundTransparency=1, Position=dim2(0,50,0,24),
+            Size=dim2(1,-55,0,12), BorderSizePixel=0,
+            TextXAlignment=Enum.TextXAlignment.Left, TextSize=10,
+            TextTransparency=0.3, TextTruncate=Enum.TextTruncate.AtEnd,
+            BackgroundColor3=rgb(255,255,255), ZIndex=3 })
+        local clk = create("TextButton",{ Parent=eH, Size=dim2(1,0,1,0),
+            BackgroundTransparency=1, Text="",
+            BorderSizePixel=0, AutoButtonColor=false, ZIndex=4 })
+        clk.MouseEnter:Connect(function() tween(hov,{BackgroundTransparency=0.7}) end)
+        clk.MouseLeave:Connect(function() tween(hov,{BackgroundTransparency=1}) end)
+        return eOut
     end
 
-    local function updatePlayerList(searchTerm)
-        searchTerm = searchTerm and searchTerm:lower() or ""
-        for _, child in ipairs(playerListContainer:GetChildren()) do
-            if child:IsA("Frame") then child:Destroy() end
+    local function refresh(term)
+        term = (term or ""):lower()
+        for _,c in ipairs(plc:GetChildren()) do
+            if c:IsA("Frame") then c:Destroy() end
         end
-        for _, player in ipairs(Players:GetPlayers()) do
-            local dn = player.DisplayName:lower()
-            local un = player.Name:lower()
-            if searchTerm == "" or dn:find(searchTerm, 1, true) or un:find(searchTerm, 1, true) then
-                createPlayerEntry(player)
-            end
+        for _,p in ipairs(Players:GetPlayers()) do
+            if term==""
+                or p.DisplayName:lower():find(term,1,true)
+                or p.Name:lower():find(term,1,true)
+            then makeEntry(p) end
         end
     end
 
-    updatePlayerList()
-    searchBox:GetPropertyChangedSignal("Text"):Connect(function()
-        updatePlayerList(searchBox.Text)
-    end)
-    Players.PlayerAdded:Connect(function()
-        task.wait(0.5); updatePlayerList(searchBox.Text)
-    end)
-    Players.PlayerRemoving:Connect(function()
-        task.wait(0.1); updatePlayerList(searchBox.Text)
-    end)
+    refresh()
+    searchBox:GetPropertyChangedSignal("Text"):Connect(function() refresh(searchBox.Text) end)
+    conn(Players.PlayerAdded,   function() task.wait(0.5); refresh(searchBox.Text) end)
+    conn(Players.PlayerRemoving,function() task.wait(0.1); refresh(searchBox.Text) end)
 
-    return playersContent
+    return pc
 end
 
--- ── Section API object ─────────────────────────────────────────────────────────
+-- ─────────────────────────────────────────────────────────────────────────────
+-- API OBJECTS
+-- ─────────────────────────────────────────────────────────────────────────────
 local SectionAPI = {}
 SectionAPI.__index = SectionAPI
+function SectionAPI:addToggle(label,default,cb)
+    local _,g=_makeToggle(self._c,label,default,cb,self._i); self._i=self._i+1; return g end
+function SectionAPI:addSlider(label,min,max,default,cb)
+    local _,g=_makeSlider(self._c,label,min,max,default,cb,self._i); self._i=self._i+1; return g end
+function SectionAPI:addKeybind(label,key,cb)
+    local _,g=_makeKeybind(self._c,label,key,cb,self._i); self._i=self._i+1; return g end
+function SectionAPI:addColorPicker(label,color,cb)
+    local _,g=_makeColorPicker(self._c,label,color,cb,self._i); self._i=self._i+1; return g end
 
-function SectionAPI:addToggle(label, default, callback)
-    local _, getter = _makeToggle(self._container, label, default, callback, self._order)
-    self._order = self._order + 1
-    return getter
-end
-
-function SectionAPI:addSlider(label, min, max, default, callback)
-    local _, getter = _makeSlider(self._container, label, min, max, default, callback, self._order)
-    self._order = self._order + 1
-    return getter
-end
-
-function SectionAPI:addKeybind(label, defaultKey, callback)
-    local _, getter = _makeKeybind(self._container, label, defaultKey, callback, self._order)
-    self._order = self._order + 1
-    return getter
-end
-
-function SectionAPI:addColorPicker(label, defaultColor, callback)
-    local _, getter = _makeColorPicker(self._container, label, defaultColor, callback, self._order)
-    self._order = self._order + 1
-    return getter
-end
-
--- ── Tab API object ─────────────────────────────────────────────────────────────
 local TabAPI = {}
 TabAPI.__index = TabAPI
-
 function TabAPI:addSection(title)
-    local content = _makeSection(self._container, title, self._sectionOrder)
-    self._sectionOrder = self._sectionOrder + 1
-    return setmetatable({ _container = content, _order = 1 }, SectionAPI)
+    local c=_makeSection(self._c,title,self._i); self._i=self._i+1
+    return setmetatable({_c=c,_i=1},SectionAPI)
 end
 
--- ── Window / library API ───────────────────────────────────────────────────────
 local WindowAPI = {}
 WindowAPI.__index = WindowAPI
 
-function WindowAPI:addTab(name)
-    -- Special handling for Players tab
-    if name == "Players" then
-        local content = _buildPlayersTab(self._contentHolder)
-        local btn, indicator = self._createTabBtn(name, self._tabOrder)
-        self._tabOrder = self._tabOrder + 1
-        self._tabs[name] = { button = btn, indicator = indicator, content = content }
-        btn.MouseButton1Click:Connect(function() self:_switchTab(name) end)
-        return nil -- Players tab manages itself
+function WindowAPI:_switchTab(name)
+    for n,data in pairs(self._tabs) do
+        data.indicator.Visible = (n==name)
+        data.content.Visible   = (n==name)
+        tween(data.button,{ TextColor3=n==name and themes.preset.accent or themes.preset.text })
     end
-
-    -- Generic scrollable tab
-    local content, container = _makeScrollContent(self._contentHolder)
-    local btn, indicator = self._createTabBtn(name, self._tabOrder)
-    self._tabOrder = self._tabOrder + 1
-    self._tabs[name] = { button = btn, indicator = indicator, content = content }
-    btn.MouseButton1Click:Connect(function() self:_switchTab(name) end)
-
-    local tab = setmetatable({ _container = container, _sectionOrder = 1 }, TabAPI)
-    return tab
 end
 
-function WindowAPI:_switchTab(tabName)
-    for name, data in pairs(self._tabs) do
-        data.indicator.Visible = (name == tabName)
-        data.content.Visible  = (name == tabName)
-        if name == tabName then
-            tween(data.button, { TextColor3 = themes.preset.accent })
-        else
-            tween(data.button, { TextColor3 = themes.preset.text })
-        end
+function WindowAPI:addTab(name)
+    local content, container
+    if name=="Players" then
+        content = _buildPlayersTab(self._ch)
+    else
+        content, container = _makeScrollContent(self._ch)
     end
+    local btn,ind = self._mkBtn(name, self._to)
+    self._to = self._to+1
+    self._tabs[name] = { button=btn, indicator=ind, content=content }
+    btn.MouseButton1Click:Connect(function() self:_switchTab(name) end)
+    -- fix #9: auto-switch to first tab added
+    if not self._firstTab then self._firstTab=name; self:_switchTab(name) end
+    if name=="Players" then return nil end
+    return setmetatable({_c=container,_i=1},TabAPI)
+end
+
+function WindowAPI:addThemeTab()
+    local content,container = _makeScrollContent(self._ch)
+    local lbl=create("TextLabel",{ Parent=container, FontFace=customFont,
+        Text="Theme Customization", TextColor3=themes.preset.accent,
+        BackgroundTransparency=1, Size=dim2(1,0,0,16),
+        TextSize=12, TextXAlignment=Enum.TextXAlignment.Left, LayoutOrder=1 })
+    applyTheme(lbl,"accent","TextColor3")
+    _makeThemeColorPicker(container,"Outline",      "outline",       10)
+    _makeThemeColorPicker(container,"Inline",       "inline",        11)
+    _makeThemeColorPicker(container,"Accent",       "accent",        12)
+    _makeThemeColorPicker(container,"High Contrast","high_contrast", 13)
+    _makeThemeColorPicker(container,"Low Contrast", "low_contrast",  14)
+    _makeThemeColorPicker(container,"Text",         "text",          15)
+    _makeThemeColorPicker(container,"Glow",         "glow",          16)
+    local btn,ind=self._mkBtn("Theme",self._to); self._to=self._to+1
+    self._tabs["Theme"]={button=btn,indicator=ind,content=content}
+    btn.MouseButton1Click:Connect(function() self:_switchTab("Theme") end)
+    if not self._firstTab then self._firstTab="Theme"; self:_switchTab("Theme") end
 end
 
 function WindowAPI:destroy()
-    self._screenGui:Destroy()
-    for _, c in pairs(connections) do c:Disconnect() end
-    connections = {}
+    self._gui:Destroy()
+    for _,c in pairs(connections) do c:Disconnect() end
+    connections={}
 end
 
--- ── Library entry point ────────────────────────────────────────────────────────
+-- ─────────────────────────────────────────────────────────────────────────────
+-- ENTRY POINT
+-- ─────────────────────────────────────────────────────────────────────────────
 local UILib = {}
 
 function UILib.new(title)
-    local screenGui = create("ScreenGui", {
-        Name = "UILib_" .. title,
-        Parent = CoreGui,
-        ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    local sg = create("ScreenGui",{
+        Name="UILib_"..title, Parent=CoreGui,
+        ZIndexBehavior=Enum.ZIndexBehavior.Sibling,
     })
+    local mf = create("Frame",{
+        Parent=sg, Name="MainFrame",
+        AnchorPoint=vec2(0,0), Size=dim2(0,394,0,464),
+        Position=dim2(0,100,0,100), Active=true,
+        BorderColor3=rgb(0,0,0), BorderSizePixel=0,
+        BackgroundColor3=themes.preset.outline,
+    })
+    makeResizable(mf)
+    applyTheme(mf,"outline","BackgroundColor3")
 
-    local mainFrame = create("Frame", {
-        Parent = screenGui, Name = "MainFrame",
-        AnchorPoint = vec2(0, 0),
-        Size = dim2(0, 394, 0, 464),
-        Position = dim2(0, 100, 0, 100),
-        Active = true, BorderColor3 = rgb(0, 0, 0),
-        BorderSizePixel = 0, BackgroundColor3 = themes.preset.outline
-    })
-    makeResizable(mainFrame)
-    applyTheme(mainFrame, "outline", "BackgroundColor3")
+    local wIn = create("Frame",{ Parent=mf,
+        Position=dim2(0,1,0,1), Size=dim2(1,-2,1,-2),
+        BorderSizePixel=0, BackgroundColor3=themes.preset.accent })
+    applyTheme(wIn,"accent","BackgroundColor3")
+    local wH = create("Frame",{ Parent=wIn,
+        Position=dim2(0,1,0,1), Size=dim2(1,-2,1,-2),
+        BorderSizePixel=0, BackgroundColor3=rgb(255,255,255) })
+    local wG = create("UIGradient",{ Parent=wH, Rotation=90,
+        Color=ColorSequence.new{
+            ColorSequenceKeypoint.new(0,themes.preset.low_contrast),
+            ColorSequenceKeypoint.new(1,themes.preset.high_contrast),
+        }})
+    applyTheme(wG,"contrast","Color")
 
-    local windowInline = create("Frame", {
-        Parent = mainFrame, Name = "window_inline",
-        Position = dim2(0, 1, 0, 1), Size = dim2(1, -2, 1, -2),
-        BorderSizePixel = 0, BackgroundColor3 = themes.preset.accent
-    })
-    applyTheme(windowInline, "accent", "BackgroundColor3")
+    local titleLbl = create("TextLabel",{ Parent=wH, FontFace=customFont,
+        TextColor3=themes.preset.accent, Text=title,
+        BackgroundTransparency=1, Position=dim2(0,2,0,4),
+        BorderSizePixel=0, AutomaticSize=Enum.AutomaticSize.XY,
+        TextSize=12, BackgroundColor3=rgb(255,255,255) })
+    applyTheme(titleLbl,"accent","TextColor3")
 
-    local windowHolder = create("Frame", {
-        Parent = windowInline, Name = "window_holder",
-        Position = dim2(0, 1, 0, 1), Size = dim2(1, -2, 1, -2),
-        BorderSizePixel = 0, BackgroundColor3 = rgb(255, 255, 255)
-    })
-    local windowGradient = create("UIGradient", {
-        Parent = windowHolder, Rotation = 90,
-        Color = ColorSequence.new{
-            ColorSequenceKeypoint.new(0, themes.preset.low_contrast),
-            ColorSequenceKeypoint.new(1, themes.preset.high_contrast)
-        }
-    })
-    applyTheme(windowGradient, "contrast", "Color")
+    -- drag restricted to title bar row – fix #6
+    local dragBar = Instance.new("Frame")
+    dragBar.Size               = dim2(1,0,0,18)
+    dragBar.BackgroundTransparency = 1
+    dragBar.BorderSizePixel    = 0
+    dragBar.ZIndex             = 50
+    dragBar.Parent             = wH
+    makeDraggable(mf, dragBar)
 
-    local titleText = create("TextLabel", {
-        Parent = windowHolder, FontFace = customFont,
-        TextColor3 = themes.preset.accent, Text = title,
-        BackgroundTransparency = 1, Position = dim2(0, 2, 0, 4),
-        BorderSizePixel = 0, AutomaticSize = Enum.AutomaticSize.XY,
-        TextSize = 12, BackgroundColor3 = rgb(255, 255, 255)
-    })
-    applyTheme(titleText, "accent", "TextColor3")
+    local closeBtn = create("TextButton",{ Parent=wH, FontFace=customFont,
+        Name="close", AnchorPoint=vec2(1,0), Active=false, Text="X",
+        Size=dim2(0,0,0,0), Selectable=false,
+        Position=dim2(1,-7,0,5), BorderSizePixel=0,
+        BackgroundTransparency=1, TextXAlignment=Enum.TextXAlignment.Right,
+        AutomaticSize=Enum.AutomaticSize.XY, TextColor3=themes.preset.text,
+        TextSize=12, ZIndex=100, BackgroundColor3=rgb(255,255,255) })
+    closeBtn.MouseButton1Click:Connect(function() sg.Enabled=false end)
 
-    -- Invisible drag handle covering just the title bar row
-    local titleDragHandle = Instance.new("Frame")
-    titleDragHandle.Size = dim2(1, 0, 0, 18)
-    titleDragHandle.Position = dim2(0, 0, 0, 0)
-    titleDragHandle.BackgroundTransparency = 1
-    titleDragHandle.BorderSizePixel = 0
-    titleDragHandle.ZIndex = 50
-    titleDragHandle.Parent = windowHolder
-    makeDraggable(mainFrame, titleDragHandle)
+    create("UIPadding",{ Parent=wH,
+        PaddingBottom=dim(0,4), PaddingRight=dim(0,4), PaddingLeft=dim(0,4) })
 
-    local closeButton = create("TextButton", {
-        Parent = windowHolder, FontFace = customFont, Name = "close",
-        AnchorPoint = vec2(1, 0), Active = false, Text = "X",
-        Size = dim2(0, 0, 0, 0), Selectable = false,
-        Position = dim2(1, -7, 0, 5), BorderSizePixel = 0,
-        BackgroundTransparency = 1, TextXAlignment = Enum.TextXAlignment.Right,
-        AutomaticSize = Enum.AutomaticSize.XY, TextColor3 = themes.preset.text,
-        TextSize = 12, ZIndex = 100, BackgroundColor3 = rgb(255, 255, 255)
-    })
-    closeButton.MouseButton1Click:Connect(function()
-        screenGui.Enabled = false
-    end)
+    -- tab bar
+    local tbOut = create("Frame",{ Parent=wH,
+        Position=dim2(0,0,0,18), Size=dim2(1,0,0,20),
+        BorderSizePixel=0, BackgroundColor3=themes.preset.inline })
+    applyTheme(tbOut,"inline","BackgroundColor3")
+    local tbIn = create("Frame",{ Parent=tbOut, Position=dim2(0,1,0,1),
+        Size=dim2(1,-2,1,-2), BorderSizePixel=0,
+        BackgroundColor3=themes.preset.outline })
+    applyTheme(tbIn,"outline","BackgroundColor3")
+    local tbH = create("Frame",{ Parent=tbIn, Position=dim2(0,1,0,1),
+        Size=dim2(1,-2,1,-2), BorderSizePixel=0, BackgroundColor3=rgb(255,255,255) })
+    local tbG = create("UIGradient",{ Parent=tbH, Rotation=90,
+        Color=ColorSequence.new{
+            ColorSequenceKeypoint.new(0,themes.preset.low_contrast),
+            ColorSequenceKeypoint.new(1,themes.preset.high_contrast),
+        }})
+    applyTheme(tbG,"contrast","Color")
+    create("UIListLayout",{ Parent=tbH, FillDirection=Enum.FillDirection.Horizontal,
+        Padding=dim(0,2), SortOrder=Enum.SortOrder.LayoutOrder })
+    create("UIPadding",{ Parent=tbH, PaddingLeft=dim(0,2),
+        PaddingTop=dim(0,1), PaddingBottom=dim(0,1) })
 
-    create("UIPadding", {
-        Parent = windowHolder, PaddingBottom = dim(0, 4),
-        PaddingRight = dim(0, 4), PaddingLeft = dim(0, 4)
-    })
+    -- content area
+    local mOut = create("Frame",{ Parent=wH,
+        Position=dim2(0,0,0,40), Size=dim2(1,0,1,-40),
+        BorderSizePixel=0, BackgroundColor3=themes.preset.inline })
+    applyTheme(mOut,"inline","BackgroundColor3")
+    local mIn = create("Frame",{ Parent=mOut, Position=dim2(0,1,0,1),
+        Size=dim2(1,-2,1,-2), BorderSizePixel=0,
+        BackgroundColor3=themes.preset.outline })
+    applyTheme(mIn,"outline","BackgroundColor3")
+    local mH = create("Frame",{ Parent=mIn, Position=dim2(0,1,0,1),
+        Size=dim2(1,-2,1,-2), BorderSizePixel=0, BackgroundColor3=rgb(255,255,255) })
+    local mG = create("UIGradient",{ Parent=mH, Rotation=90,
+        Color=ColorSequence.new{
+            ColorSequenceKeypoint.new(0,themes.preset.low_contrast),
+            ColorSequenceKeypoint.new(1,themes.preset.high_contrast),
+        }})
+    applyTheme(mG,"contrast","Color")
 
-    -- Tab bar
-    local tabBarOutline = create("Frame", {
-        Parent = windowHolder, Name = "tab_bar_outline",
-        Position = dim2(0, 0, 0, 18), Size = dim2(1, 0, 0, 20),
-        BorderSizePixel = 0, BackgroundColor3 = themes.preset.inline
-    })
-    applyTheme(tabBarOutline, "inline", "BackgroundColor3")
-    local tabBarInline = create("Frame", {
-        Parent = tabBarOutline, Position = dim2(0, 1, 0, 1),
-        Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
-        BackgroundColor3 = themes.preset.outline
-    })
-    applyTheme(tabBarInline, "outline", "BackgroundColor3")
-    local tabBarHolder = create("Frame", {
-        Parent = tabBarInline, Position = dim2(0, 1, 0, 1),
-        Size = dim2(1, -2, 1, -2), BorderSizePixel = 0,
-        BackgroundColor3 = rgb(255, 255, 255)
-    })
-    local tabBarGradient = create("UIGradient", {
-        Parent = tabBarHolder, Rotation = 90,
-        Color = ColorSequence.new{
-            ColorSequenceKeypoint.new(0, themes.preset.low_contrast),
-            ColorSequenceKeypoint.new(1, themes.preset.high_contrast)
-        }
-    })
-    applyTheme(tabBarGradient, "contrast", "Color")
-    create("UIListLayout", {
-        Parent = tabBarHolder, FillDirection = Enum.FillDirection.Horizontal,
-        Padding = dim(0, 2), SortOrder = Enum.SortOrder.LayoutOrder
-    })
-    create("UIPadding", {
-        Parent = tabBarHolder, PaddingLeft = dim(0, 2),
-        PaddingTop = dim(0, 1), PaddingBottom = dim(0, 1)
-    })
+    -- glow
+    local glow = create("ImageLabel",{ Parent=mf, Name="glow",
+        ImageColor3=themes.preset.glow, ScaleType=Enum.ScaleType.Slice,
+        BorderColor3=rgb(0,0,0), BackgroundColor3=rgb(255,255,255),
+        Image="http://www.roblox.com/asset/?id=18245826428",
+        BackgroundTransparency=1, ImageTransparency=0.8,
+        Position=dim2(0,-20,0,-20), Size=dim2(1,40,1,40),
+        ZIndex=2, BorderSizePixel=0,
+        SliceCenter=Rect.new(vec2(21,21),vec2(79,79)) })
+    applyTheme(glow,"glow","ImageColor3")
 
-    -- Main content area
-    local mainOutline = create("Frame", {
-        Parent = windowHolder, Name = "outline",
-        Position = dim2(0, 0, 0, 40), Size = dim2(1, 0, 1, -40),
-        BorderSizePixel = 0, BackgroundColor3 = themes.preset.inline
-    })
-    applyTheme(mainOutline, "inline", "BackgroundColor3")
-    local mainInline = create("Frame", {
-        Parent = mainOutline, Name = "inline",
-        Position = dim2(0, 1, 0, 1), Size = dim2(1, -2, 1, -2),
-        BorderSizePixel = 0, BackgroundColor3 = themes.preset.outline
-    })
-    applyTheme(mainInline, "outline", "BackgroundColor3")
-    local mainContentHolder = create("Frame", {
-        Parent = mainInline, Name = "holder",
-        Position = dim2(0, 1, 0, 1), Size = dim2(1, -2, 1, -2),
-        BorderSizePixel = 0, BackgroundColor3 = rgb(255, 255, 255)
-    })
-    local mainContentGradient = create("UIGradient", {
-        Parent = mainContentHolder, Rotation = 90,
-        Color = ColorSequence.new{
-            ColorSequenceKeypoint.new(0, themes.preset.low_contrast),
-            ColorSequenceKeypoint.new(1, themes.preset.high_contrast)
-        }
-    })
-    applyTheme(mainContentGradient, "contrast", "Color")
-
-    -- Glow effect
-    local glow = create("ImageLabel", {
-        Parent = mainFrame, Name = "glow",
-        ImageColor3 = themes.preset.glow,
-        ScaleType = Enum.ScaleType.Slice,
-        BorderColor3 = rgb(0, 0, 0),
-        BackgroundColor3 = rgb(255, 255, 255),
-        Image = "http://www.roblox.com/asset/?id=18245826428",
-        BackgroundTransparency = 1, ImageTransparency = 0.8,
-        Position = dim2(0, -20, 0, -20), Size = dim2(1, 40, 1, 40),
-        ZIndex = 2, BorderSizePixel = 0,
-        SliceCenter = Rect.new(Vector2.new(21, 21), Vector2.new(79, 79))
-    })
-    applyTheme(glow, "glow", "ImageColor3")
-
-    -- Tab button factory (closure over tabBarHolder)
-    local function createTabBtn(name, order)
-        local btn = create("TextButton", {
-            Parent = tabBarHolder, Name = name, FontFace = customFont,
-            Text = name, TextColor3 = themes.preset.text,
-            BackgroundTransparency = 1, Size = dim2(0, 0, 1, 0),
-            AutomaticSize = Enum.AutomaticSize.X,
-            BorderSizePixel = 0, TextSize = 12, LayoutOrder = order,
-            BackgroundColor3 = rgb(255, 255, 255)
-        })
-        create("UIPadding", {
-            Parent = btn, PaddingLeft = dim(0, 6), PaddingRight = dim(0, 6)
-        })
-        local indicator = create("Frame", {
-            Parent = btn, Name = "active_indicator",
-            Position = dim2(0, 0, 1, -1), Size = dim2(1, 0, 0, 1),
-            BackgroundColor3 = themes.preset.accent, BorderSizePixel = 0, Visible = false
-        })
-        applyTheme(indicator, "accent", "BackgroundColor3")
-        return btn, indicator
+    local function mkBtn(name, order)
+        local btn = create("TextButton",{ Parent=tbH, Name=name,
+            FontFace=customFont, Text=name, TextColor3=themes.preset.text,
+            BackgroundTransparency=1, Size=dim2(0,0,1,0),
+            AutomaticSize=Enum.AutomaticSize.X,
+            BorderSizePixel=0, TextSize=12, LayoutOrder=order,
+            BackgroundColor3=rgb(255,255,255) })
+        create("UIPadding",{ Parent=btn, PaddingLeft=dim(0,6), PaddingRight=dim(0,6) })
+        local ind = create("Frame",{ Parent=btn, Name="active_indicator",
+            Position=dim2(0,0,1,-1), Size=dim2(1,0,0,1),
+            BackgroundColor3=themes.preset.accent, BorderSizePixel=0, Visible=false })
+        applyTheme(ind,"accent","BackgroundColor3")
+        return btn, ind
     end
 
     local win = setmetatable({
-        _screenGui    = screenGui,
-        _contentHolder = mainContentHolder,
-        _tabs          = {},
-        _tabOrder      = 1,
-        _createTabBtn  = createTabBtn,
+        _gui      = sg,
+        _ch       = mH,
+        _tabs     = {},
+        _to       = 1,
+        _mkBtn    = mkBtn,
+        _firstTab = nil,
     }, WindowAPI)
 
-    -- Always include a built-in Theme tab at the end
-    -- (call addTab("Theme") yourself if you want it in a custom position,
-    --  or it's automatically added after all user tabs via addThemeTab)
-    function win:addThemeTab()
-        local content, container = _makeScrollContent(self._contentHolder)
-        -- Override scroll to use standard padding
-        local themeLabel = create("TextLabel", {
-            Parent = container, FontFace = customFont,
-            Text = "Theme Customization", TextColor3 = themes.preset.accent,
-            BackgroundTransparency = 1, Size = dim2(1, 0, 0, 16),
-            TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left,
-            LayoutOrder = 1
-        })
-        applyTheme(themeLabel, "accent", "TextColor3")
-        _makeThemeColorPicker(container, "Outline",       "outline",       10)
-        _makeThemeColorPicker(container, "Inline",        "inline",        11)
-        _makeThemeColorPicker(container, "Accent",        "accent",        12)
-        _makeThemeColorPicker(container, "High Contrast", "high_contrast", 13)
-        _makeThemeColorPicker(container, "Low Contrast",  "low_contrast",  14)
-        _makeThemeColorPicker(container, "Text",          "text",          15)
-        _makeThemeColorPicker(container, "Glow",          "glow",          16)
-
-        local btn, indicator = self._createTabBtn("Theme", self._tabOrder)
-        self._tabOrder = self._tabOrder + 1
-        self._tabs["Theme"] = { button = btn, indicator = indicator, content = content }
-        btn.MouseButton1Click:Connect(function() self:_switchTab("Theme") end)
-    end
-
-    screenGui.AncestryChanged:Connect(function()
-        if not screenGui.Parent then
-            for _, c in pairs(connections) do c:Disconnect() end
-            connections = {}
+    conn(sg.AncestryChanged, function()
+        if not sg.Parent then
+            for _,c in pairs(connections) do c:Disconnect() end
+            connections={}
         end
     end)
 
-    screenGui.Enabled = true
+    sg.Enabled = true
     return win
 end
 
