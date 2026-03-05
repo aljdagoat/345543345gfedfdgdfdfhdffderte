@@ -82,10 +82,37 @@ local function safeCall(fn, ...)
     if not ok then warn("[UILib] callback error:", err) end
 end
 
+-- ── Active tween tracker ──────────────────────────────────────────────────────
+-- Keyed by instance, value = table of { [propName] = Tween }
+-- Lets us cancel a running tween before starting a new one on the same property,
+-- preventing TweenService from leaving the property in a broken mid-animation state.
+local _activeTweens = {}
+
 -- ── Tween helper ─────────────────────────────────────────────────────────────
 local function tween(obj, props, t)
+    -- Cancel any existing tweens on the same instance+property first
+    if _activeTweens[obj] then
+        for prop, oldTw in pairs(_activeTweens[obj]) do
+            if props[prop] ~= nil then
+                oldTw:Cancel()
+                _activeTweens[obj][prop] = nil
+            end
+        end
+    end
     local tw = TweenService:Create(obj,
         TweenInfo.new(t or 0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props)
+    -- Track this tween so future calls can cancel it
+    if not _activeTweens[obj] then _activeTweens[obj] = {} end
+    for prop in pairs(props) do
+        _activeTweens[obj][prop] = tw
+    end
+    tw.Completed:Connect(function()
+        if _activeTweens[obj] then
+            for prop, tracked in pairs(_activeTweens[obj]) do
+                if tracked == tw then _activeTweens[obj][prop] = nil end
+            end
+        end
+    end)
     tw:Play()
     return tw
 end
@@ -102,24 +129,20 @@ local function updateTheme()
         for pname, list in pairs(props) do
             for _, inst in pairs(list) do
                 if inst and inst.Parent then
-                    local val
+                    -- Cancel any in-flight tween on this property before
+                    -- directly writing it, so the tween doesn't overwrite us
+                    -- on its next frame.
+                    if _activeTweens[inst] and _activeTweens[inst][pname] then
+                        _activeTweens[inst][pname]:Cancel()
+                        _activeTweens[inst][pname] = nil
+                    end
                     if tname == "contrast" then
-                        val = ColorSequence.new{
+                        inst[pname] = ColorSequence.new{
                             ColorSequenceKeypoint.new(0, themes.preset.low_contrast),
                             ColorSequenceKeypoint.new(1, themes.preset.high_contrast),
                         }
                     elseif themes.preset[tname] then
-                        val = themes.preset[tname]
-                    end
-                    if val ~= nil then
-                        -- Use TweenService at t=0 so it properly cancels any
-                        -- in-flight tween on this property before setting value.
-                        -- Direct assignment (inst[pname]=val) cancels tweens
-                        -- mid-way and leaves them in a broken state.
-                        TweenService:Create(inst,
-                            TweenInfo.new(0, Enum.EasingStyle.Linear),
-                            { [pname] = val }
-                        ):Play()
+                        inst[pname] = themes.preset[tname]
                     end
                 end
             end
