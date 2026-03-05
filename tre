@@ -320,6 +320,8 @@ local function _makeSection(parent, title, order)
     return elements
 end
 
+local _makeColorPickerBadge -- forward declaration (defined below near Color picker section)
+
 -- ── Toggle  (Skibid: 14×14 square checkbox, accent fill fades in/out) ─────────
 -- Optional keybind: pass a KeyCode as last arg to get a small badge on the right.
 local function _makeToggle(parent, label, default, callback, order, defaultKey)
@@ -1816,6 +1818,181 @@ function SectionAPI:addButtonHolder()
     local frame = _makeButtonHolder(self._c, self._i)
     self._i = self._i + 1
     return setmetatable({ _f = frame }, ButtonHolderAPI)
+end
+
+function SectionAPI:addColorPicker(label, default, cb)
+    -- Standalone color picker row: label on left, badge on right
+    local row = create("TextButton",{
+        Parent=self._c, Name=label:gsub(" ","_"),
+        Size=dim2(1,-8,0,12), BorderSizePixel=0,
+        BackgroundTransparency=1,
+        Text="", AutoButtonColor=false,
+        TextXAlignment=Enum.TextXAlignment.Left,
+        AutomaticSize=Enum.AutomaticSize.Y,
+        TextYAlignment=Enum.TextYAlignment.Top,
+        FontFace=customFont, TextSize=12,
+        TextColor3=themes.preset.text,
+        LayoutOrder=self._i, ZIndex=1,
+    })
+    -- left: label
+    local leftComp = create("Frame",{
+        Parent=row, Name="left_components",
+        BackgroundTransparency=1,
+        Position=dim2(0,0,0,0),
+        Size=dim2(0,0,0,14), BorderSizePixel=0,
+        BackgroundColor3=rgb(255,255,255),
+    })
+    create("UIListLayout",{
+        Parent=leftComp, Padding=dim(0,5),
+        FillDirection=Enum.FillDirection.Horizontal,
+    })
+    local textLbl = create("TextLabel",{
+        Parent=leftComp, FontFace=customFont,
+        Text=label, TextColor3=themes.preset.text,
+        BackgroundTransparency=1, Size=dim2(0,0,1,-1),
+        AutomaticSize=Enum.AutomaticSize.X,
+        BorderSizePixel=0, TextSize=12,
+        BackgroundColor3=rgb(255,255,255),
+    })
+    applyTheme(textLbl,"text","TextColor3")
+    -- right: badge container
+    local rightComp = create("Frame",{
+        Parent=row, Name="right_components",
+        AnchorPoint=vec2(1,0.5),
+        Position=dim2(1,-1,0.5,0),
+        Size=dim2(0,0,0,14), BorderSizePixel=0,
+        AutomaticSize=Enum.AutomaticSize.X,
+        BackgroundTransparency=1,
+        BackgroundColor3=rgb(255,255,255),
+    })
+    create("UIListLayout",{
+        Parent=rightComp,
+        VerticalAlignment=Enum.VerticalAlignment.Center,
+        FillDirection=Enum.FillDirection.Horizontal,
+        HorizontalAlignment=Enum.HorizontalAlignment.Right,
+        Padding=dim(0,4),
+        SortOrder=Enum.SortOrder.LayoutOrder,
+    })
+    local getVal = _makeColorPickerBadge(rightComp, default, cb)
+    self._i = self._i + 1
+    return getVal
+end
+
+function SectionAPI:addKeybind(label, default, cb)
+    local keyNames = {
+        [Enum.KeyCode.LeftShift]="ls", [Enum.KeyCode.RightShift]="rs",
+        [Enum.KeyCode.LeftControl]="lc", [Enum.KeyCode.RightControl]="rc",
+        [Enum.KeyCode.LeftAlt]="la", [Enum.KeyCode.RightAlt]="ra",
+        [Enum.KeyCode.Return]="ent", [Enum.KeyCode.Backspace]="bs",
+        [Enum.KeyCode.CapsLock]="caps", [Enum.KeyCode.Insert]="ins",
+    }
+    local function keyName(k)
+        return keyNames[k] or tostring(k.Name):lower()
+    end
+
+    local curKey = default
+    local listening = false
+
+    local row = create("TextLabel",{
+        Parent=self._c, Name=label:gsub(" ","_"),
+        Size=dim2(1,-8,0,12), BorderSizePixel=0,
+        BackgroundTransparency=1,
+        Text="", FontFace=customFont, TextSize=12,
+        TextColor3=themes.preset.text,
+        AutomaticSize=Enum.AutomaticSize.Y,
+        LayoutOrder=self._i, ZIndex=1,
+    })
+    local leftComp = create("Frame",{
+        Parent=row, Name="left_components",
+        BackgroundTransparency=1,
+        Position=dim2(0,0,0,0),
+        Size=dim2(0,0,0,14), BorderSizePixel=0,
+        BackgroundColor3=rgb(255,255,255),
+    })
+    create("UIListLayout",{
+        Parent=leftComp, Padding=dim(0,5),
+        FillDirection=Enum.FillDirection.Horizontal,
+    })
+    local textLbl = create("TextLabel",{
+        Parent=leftComp, FontFace=customFont,
+        Text=label, TextColor3=themes.preset.text,
+        BackgroundTransparency=1, Size=dim2(0,0,1,-1),
+        AutomaticSize=Enum.AutomaticSize.X,
+        BorderSizePixel=0, TextSize=12,
+        BackgroundColor3=rgb(255,255,255),
+    })
+    applyTheme(textLbl,"text","TextColor3")
+
+    local kOut = create("Frame",{
+        Parent=row, AnchorPoint=vec2(1,0.5),
+        Position=dim2(1,-1,0.5,0),
+        Size=dim2(0,28,0,14), BorderSizePixel=0,
+        BackgroundColor3=themes.preset.outline, ZIndex=2,
+    })
+    applyTheme(kOut,"outline","BackgroundColor3")
+    local kIn = create("Frame",{
+        Parent=kOut, Position=dim2(0,1,0,1), Size=dim2(1,-2,1,-2),
+        BorderSizePixel=0, ZIndex=2,
+        BackgroundColor3=themes.preset.inline,
+    })
+    applyTheme(kIn,"inline","BackgroundColor3")
+    local kHandler = create("Frame",{
+        Parent=kIn, Position=dim2(0,1,0,1), Size=dim2(1,-2,1,-2),
+        BorderSizePixel=0, ZIndex=2,
+        BackgroundColor3=rgb(255,255,255),
+    })
+    local kGrad = create("UIGradient",{
+        Parent=kHandler, Rotation=90,
+        Color=ColorSequence.new{
+            ColorSequenceKeypoint.new(0,themes.preset.low_contrast),
+            ColorSequenceKeypoint.new(1,themes.preset.high_contrast),
+        }
+    })
+    applyTheme(kGrad,"contrast","Color")
+    local kHover = create("Frame",{
+        Parent=kHandler, BackgroundTransparency=1,
+        Size=dim2(1,0,1,0), BorderSizePixel=0,
+        BackgroundColor3=themes.preset.accent, ZIndex=4,
+    })
+    applyTheme(kHover,"accent","BackgroundColor3")
+    local kText = create("TextLabel",{
+        Parent=kHandler, FontFace=customFont,
+        Text=default and keyName(default) or "none",
+        TextColor3=themes.preset.text,
+        BackgroundTransparency=1,
+        Size=dim2(1,0,1,0), ZIndex=3,
+        Position=dim2(0,0,0,-1),
+        TextSize=12,
+        TextXAlignment=Enum.TextXAlignment.Center,
+        TextYAlignment=Enum.TextYAlignment.Center,
+        BorderSizePixel=0, BackgroundColor3=rgb(255,255,255),
+    })
+    applyTheme(kText,"text","TextColor3")
+
+    kOut.MouseEnter:Connect(function() tween(kHover,{BackgroundTransparency=0.85}) end)
+    kOut.MouseLeave:Connect(function() tween(kHover,{BackgroundTransparency=1}) end)
+    kOut.InputBegan:Connect(function(inp)
+        if inp.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+        if listening then return end
+        listening = true
+        kText.Text = "..."
+        tween(kText,{TextColor3=themes.preset.accent})
+        local rebind
+        rebind = UserInputService.InputBegan:Connect(function(i, processed)
+            if processed then return end
+            if i.UserInputType ~= Enum.UserInputType.Keyboard then return end
+            if i.KeyCode == Enum.KeyCode.Unknown then return end
+            curKey = i.KeyCode
+            kText.Text = keyName(curKey)
+            tween(kText,{TextColor3=themes.preset.text})
+            listening = false
+            rebind:Disconnect()
+            safeCall(cb, curKey)
+        end)
+    end)
+
+    self._i = self._i + 1
+    return function() return curKey end
 end
 
 -- ── TabAPI ───────────────────────────────────────────────────────────────────
