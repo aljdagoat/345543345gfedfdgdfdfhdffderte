@@ -236,7 +236,7 @@ local _activeSG = nil
 
 -- ── Section ───────────────────────────────────────────────────────────────────
 local function _makeSection(parent, title, order)
-    -- Skibid: outer frame uses inline bg color
+    -- Outer: inline bg color, 1px border via UIPadding
     local sec = create("Frame",{
         Parent=parent, Name=title:gsub(" ","_"),
         Size=dim2(1,0,0,0), AutomaticSize=Enum.AutomaticSize.Y,
@@ -244,26 +244,32 @@ local function _makeSection(parent, title, order)
         BorderSizePixel=0, LayoutOrder=order,
     })
     applyTheme(sec,"inline","BackgroundColor3")
+    create("UIPadding",{ Parent=sec,
+        PaddingLeft=dim(0,1), PaddingRight=dim(0,1),
+        PaddingTop=dim(0,1), PaddingBottom=dim(0,1),
+    })
 
-    -- Skibid: inline frame uses outline bg color
+    -- Middle: outline bg color, 1px border via UIPadding
     local secInline = create("Frame",{
         Parent=sec,
-        Position=dim2(0,1,0,1), Size=dim2(1,-2,1,-2),
-        AutomaticSize=Enum.AutomaticSize.Y,
+        Size=dim2(1,0,0,0), AutomaticSize=Enum.AutomaticSize.Y,
         BackgroundColor3=themes.preset.outline, BorderSizePixel=0,
     })
     applyTheme(secInline,"outline","BackgroundColor3")
+    create("UIPadding",{ Parent=secInline,
+        PaddingLeft=dim(0,1), PaddingRight=dim(0,1),
+        PaddingTop=dim(0,1), PaddingBottom=dim(0,1),
+    })
 
-    -- Skibid: background frame — white, holds gradient + accent bar + title
+    -- Inner background: white tinted by dark contrast gradient
     local secBg = create("Frame",{
         Parent=secInline,
-        Position=dim2(0,1,0,1), Size=dim2(1,-2,1,-2),
-        AutomaticSize=Enum.AutomaticSize.Y,
+        Size=dim2(1,0,0,0), AutomaticSize=Enum.AutomaticSize.Y,
         BackgroundColor3=rgb(255,255,255), BorderSizePixel=0,
     })
 
-    -- Skibid: title label at Position=dim2(0,6,0,4), AutomaticSize=XY
-    local lbl = create("TextLabel",{
+    -- Skibid: title at Position=dim2(0,6,0,4), AutomaticSize=XY
+    create("TextLabel",{
         Parent=secBg, FontFace=customFont, Text=title,
         TextColor3=themes.preset.text, BackgroundTransparency=1,
         Position=dim2(0,6,0,4), BorderSizePixel=0,
@@ -271,10 +277,9 @@ local function _makeSection(parent, title, order)
         BackgroundColor3=rgb(255,255,255),
     })
 
-    -- Skibid: accent top bar Size=dim2(1,0,0,2) + white→grey gradient
+    -- Skibid: accent top bar Size=dim2(1,0,0,2)
     local accentBar = create("Frame",{
-        Parent=secBg,
-        Size=dim2(1,0,0,2), BorderSizePixel=0,
+        Parent=secBg, Size=dim2(1,0,0,2), BorderSizePixel=0,
         BackgroundColor3=themes.preset.accent,
     })
     applyTheme(accentBar,"accent","BackgroundColor3")
@@ -286,7 +291,7 @@ local function _makeSection(parent, title, order)
         }
     })
 
-    -- Skibid: contrast gradient on background (dark low_contrast→high_contrast)
+    -- Skibid: dark contrast gradient on background frame
     local bgGrad = create("UIGradient",{
         Parent=secBg, Rotation=90,
         Color=ColorSequence.new{
@@ -296,24 +301,20 @@ local function _makeSection(parent, title, order)
     })
     applyTheme(bgGrad,"contrast","Color")
 
-    -- Skibid: elements container starts below the 20px header
+    -- Elements container starts 20px down (below title)
     local elements = create("Frame",{
         Parent=secBg, Name="elements",
         Position=dim2(0,0,0,20), Size=dim2(1,0,0,0),
         AutomaticSize=Enum.AutomaticSize.Y,
-        BackgroundColor3=rgb(255,255,255), BorderSizePixel=0,
+        BackgroundTransparency=1, BorderSizePixel=0,
     })
-
-    -- Skibid: UIListLayout Padding=dim(0,4), HorizontalAlignment=Center, SortOrder=LayoutOrder
     create("UIListLayout",{
         Parent=elements, Padding=dim(0,4),
         HorizontalAlignment=Enum.HorizontalAlignment.Center,
         SortOrder=Enum.SortOrder.LayoutOrder,
     })
-    -- Skibid: UIPadding PaddingBottom=dim(0,10) on the elements container
     create("UIPadding",{
-        Parent=elements,
-        PaddingBottom=dim(0,10),
+        Parent=elements, PaddingBottom=dim(0,10),
     })
 
     return elements
