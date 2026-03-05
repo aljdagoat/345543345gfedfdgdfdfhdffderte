@@ -260,19 +260,39 @@ end
 local function _makeToggle(parent, label, default, callback, order)
     assert(type(default)=="boolean", "[UILib] toggle default must be boolean: "..label)
 
-    -- outer row: transparent, full-width, 14px tall
+    -- outer row: transparent, full-width, 12px tall (Skibid: dim2(1,-8,0,12) + AutomaticSize.Y)
     local row = create("TextButton",{
         Parent=parent, Name=label:gsub(" ","_"),
-        Size=dim2(1,-8,0,14), BorderSizePixel=0,
+        Size=dim2(1,-8,0,12), BorderSizePixel=0,
         BackgroundTransparency=1,
         Text="", AutoButtonColor=false,
         TextXAlignment=Enum.TextXAlignment.Left,
+        AutomaticSize=Enum.AutomaticSize.Y,
         TextYAlignment=Enum.TextYAlignment.Top,
         FontFace=customFont, TextSize=12,
         TextColor3=themes.preset.text,
         LayoutOrder=order or 0,
         ZIndex=1,
     })
+
+    -- right_components (Skibid: right-aligned holder for colorpicker etc.)
+    local right_components = create("Frame",{
+        Parent=row, Name="right_components",
+        Position=dim2(1,-1,0,1),
+        Size=dim2(0,0,0,12), BorderSizePixel=0,
+        BackgroundColor3=rgb(255,255,255),
+    })
+    create("UIListLayout",{
+        Parent=right_components,
+        VerticalAlignment=Enum.VerticalAlignment.Center,
+        FillDirection=Enum.FillDirection.Horizontal,
+        HorizontalAlignment=Enum.HorizontalAlignment.Right,
+        Padding=dim(0,4),
+        SortOrder=Enum.SortOrder.LayoutOrder,
+    })
+
+    -- UIPadding on toggle_holder (Skibid: empty UIPadding)
+    create("UIPadding",{ Parent=row })
 
     -- label text (left side)
     local labelFrame = create("Frame",{
@@ -306,6 +326,7 @@ local function _makeToggle(parent, label, default, callback, order)
         BackgroundColor3=themes.preset.outline,
     })
     applyTheme(toggleOut,"outline","BackgroundColor3")
+    applyTheme(toggleOut,"accent","BackgroundColor3")  -- Skibid applies both
 
     local toggleIn = create("Frame",{
         Parent=toggleOut, Name="inline",
@@ -339,7 +360,7 @@ local function _makeToggle(parent, label, default, callback, order)
         ZIndex=2,
         Position=dim2(0,1,0,1), Size=dim2(1,-2,1,-2),
         BorderSizePixel=0,
-        BackgroundColor3=rgb(255,255,255),
+        BackgroundColor3=rgb(255,255,255),  -- Skibid: rgb(255,255,255) then apply_theme accent
     })
     applyTheme(bgFill,"accent","BackgroundColor3")
     create("UIGradient",{
@@ -351,14 +372,14 @@ local function _makeToggle(parent, label, default, callback, order)
     })
     applyTheme(bgFill:FindFirstChildOfClass("UIGradient"),"contrast","Color")
 
-    -- hover overlay lives INSIDE the 14×14 checkbox box only (Skibid: hoverify(toggle_holder, toggle))
+    -- hover overlay lives INSIDE the 14×14 checkbox box (Skibid: hoverify(toggle_holder, toggle) → ZIndex=1)
     local hoverOverlay = create("Frame",{
         Parent=toggleOut,
         BackgroundTransparency=1,
         Size=dim2(1,0,1,0),
         BorderSizePixel=0,
         BackgroundColor3=themes.preset.accent,
-        ZIndex=10,
+        ZIndex=1,
     })
     applyTheme(hoverOverlay,"accent","BackgroundColor3")
 
@@ -440,10 +461,7 @@ local function _makeSlider(parent, label, min, max, default, callback, order)
         Size=dim2(1,0,0,0), BorderSizePixel=0,
         BackgroundColor3=rgb(255,255,255),
     })
-    create("UIListLayout",{
-        Parent=bottomComp, Padding=dim(0,10),
-        SortOrder=Enum.SortOrder.LayoutOrder,
-    })
+    -- NOTE: UIListLayout added AFTER slider elements (matches Skibid order)
 
     -- outline shell
     local sliderBtn = create("TextButton",{
@@ -468,6 +486,14 @@ local function _makeSlider(parent, label, min, max, default, callback, order)
         Parent=sliderIn, Name="background",
         Position=dim2(0,1,0,1), Size=dim2(1,-2,1,-2),
         BorderSizePixel=0,
+    })
+    -- Skibid: background frame has its own gradient (white→grey, no apply_theme)
+    create("UIGradient",{
+        Parent=sliderBg, Rotation=90,
+        Color=ColorSequence.new{
+            ColorSequenceKeypoint.new(0,rgb(255,255,255)),
+            ColorSequenceKeypoint.new(1,rgb(167,167,167)),
+        }
     })
 
     -- contrast frame (gradient bg)
@@ -513,6 +539,23 @@ local function _makeSlider(parent, label, min, max, default, callback, order)
         }
     })
 
+    -- Skibid: hoverify(slider_REAL, slider) — hover frame parented to sliderBtn, triggered by root
+    local sliderHover = create("Frame",{
+        Parent=sliderBtn,
+        BackgroundTransparency=1,
+        Size=dim2(1,0,1,0),
+        BorderSizePixel=0,
+        BackgroundColor3=themes.preset.accent,
+        ZIndex=1,
+    })
+    applyTheme(sliderHover,"accent","BackgroundColor3")
+
+    -- Skibid: UIListLayout placed AFTER slider children
+    create("UIListLayout",{
+        Parent=bottomComp, Padding=dim(0,10),
+        SortOrder=Enum.SortOrder.LayoutOrder,
+    })
+
     local cur      = default
     local dragging = false
 
@@ -544,12 +587,12 @@ local function _makeSlider(parent, label, min, max, default, callback, order)
         end
     end)
 
-    -- hover effect
+    -- hover effect (Skibid: hoverify tweens overlay frame transparency)
     root.MouseEnter:Connect(function()
-        tween(sliderBtn,{BackgroundColor3=themes.preset.inline})
+        tween(sliderHover,{BackgroundTransparency=0})
     end)
     root.MouseLeave:Connect(function()
-        tween(sliderBtn,{BackgroundColor3=themes.preset.outline})
+        tween(sliderHover,{BackgroundTransparency=1})
     end)
 
     -- init display
@@ -609,10 +652,7 @@ local function _makeDropdown(parent, label, items, default, callback, order)
         Size=dim2(1,26,0,0), BorderSizePixel=0,
         BackgroundColor3=rgb(255,255,255),
     })
-    create("UIListLayout",{
-        Parent=bottomComp, Padding=dim(0,10),
-        SortOrder=Enum.SortOrder.LayoutOrder,
-    })
+    -- NOTE: UIListLayout added AFTER children (matches Skibid order)
 
     local dropBtn = create("TextButton",{
         Parent=bottomComp,
@@ -623,6 +663,17 @@ local function _makeDropdown(parent, label, items, default, callback, order)
         Text="", AutoButtonColor=false,
     })
     applyTheme(dropBtn,"outline","BackgroundColor3")
+
+    -- Skibid: hoverify(dropdown_REAL, dropdown) → hover frame parented to dropdown, triggered by dropdown_REAL
+    local dropHover = create("Frame",{
+        Parent=dropBtn,
+        BackgroundTransparency=1,
+        Size=dim2(1,0,1,0),
+        BorderSizePixel=0,
+        BackgroundColor3=themes.preset.accent,
+        ZIndex=1,
+    })
+    applyTheme(dropHover,"accent","BackgroundColor3")
 
     local dropIn = create("Frame",{
         Parent=dropBtn, Name="inline",
@@ -636,14 +687,25 @@ local function _makeDropdown(parent, label, items, default, callback, order)
         Parent=dropIn, Name="background",
         Position=dim2(0,1,0,1), Size=dim2(1,-2,1,-2),
         ZIndex=2, BorderSizePixel=0,
+        BackgroundTransparency=1,  -- Skibid: BackgroundTransparency=1 on accent frame
         BackgroundColor3=themes.preset.accent,
     })
     applyTheme(dropBg,"accent","BackgroundColor3")
+    -- Skibid: background has its own gradient
+    create("UIGradient",{
+        Parent=dropBg, Rotation=90,
+        Color=ColorSequence.new{
+            ColorSequenceKeypoint.new(0,rgb(255,255,255)),
+            ColorSequenceKeypoint.new(1,rgb(167,167,167)),
+        }
+    })
+    applyTheme(dropBg:FindFirstChildOfClass("UIGradient"),"contrast","Color")
 
     local dropContrast = create("Frame",{
         Parent=dropBg, Name="contrast",
         ZIndex=2, Size=dim2(1,0,1,0), BorderSizePixel=0,
         BackgroundColor3=rgb(255,255,255),
+        -- Skibid: non-scrolling dropdown contrast has no AutomaticSize
     })
     create("UIGradient",{
         Parent=dropContrast, Rotation=90,
@@ -690,6 +752,12 @@ local function _makeDropdown(parent, label, items, default, callback, order)
         BackgroundColor3=rgb(255,255,255),
     })
     applyTheme(valLbl,"text","TextColor3")
+
+    -- Skibid: UIListLayout placed AFTER dropdown children
+    create("UIListLayout",{
+        Parent=bottomComp, Padding=dim(0,10),
+        SortOrder=Enum.SortOrder.LayoutOrder,
+    })
 
     -- ── floating dropdown holder (parented to ScreenGui) ──────────────────────
     local holderParent = _activeSG or CoreGui
@@ -773,7 +841,7 @@ local function _makeDropdown(parent, label, items, default, callback, order)
             local optBtn = create("TextButton",{
                 Parent=floatContrast,
                 FontFace=customFont,
-                TextColor3=themes.preset.text,
+                TextColor3=themes.preset.accent,  -- Skibid: apply_theme "accent" on TextColor3
                 Size=dim2(1,0,0,0),
                 BackgroundTransparency=1,
                 BorderSizePixel=0,
@@ -786,7 +854,7 @@ local function _makeDropdown(parent, label, items, default, callback, order)
                 BackgroundColor3=rgb(255,255,255),
                 AutoButtonColor=false,
             })
-            applyTheme(optBtn,"text","TextColor3")
+            applyTheme(optBtn,"accent","TextColor3")
             table.insert(optionInstances, optBtn)
 
             optBtn.MouseButton1Down:Connect(function()
@@ -799,10 +867,10 @@ local function _makeDropdown(parent, label, items, default, callback, order)
                 safeCall(callback, v)
             end)
             optBtn.MouseEnter:Connect(function()
-                tween(optBtn,{TextColor3=themes.preset.accent})
+                tween(optBtn,{TextColor3=themes.preset.text})
             end)
             optBtn.MouseLeave:Connect(function()
-                tween(optBtn,{TextColor3=themes.preset.text})
+                tween(optBtn,{TextColor3=themes.preset.accent})
             end)
         end
     end
@@ -820,12 +888,12 @@ local function _makeDropdown(parent, label, items, default, callback, order)
         plusLbl.TextSize = openState and 12 or 8
     end)
 
-    -- hover effect
+    -- hover effect (Skibid: hoverify tweens overlay transparency)
     root.MouseEnter:Connect(function()
-        tween(dropBtn,{BackgroundColor3=themes.preset.inline})
+        tween(dropHover,{BackgroundTransparency=0})
     end)
     root.MouseLeave:Connect(function()
-        tween(dropBtn,{BackgroundColor3=themes.preset.outline})
+        tween(dropHover,{BackgroundTransparency=1})
     end)
 
     return root, function() return selectedValue end
