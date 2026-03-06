@@ -2201,20 +2201,21 @@ function TabAPI:addSection(title)
     return setmetatable({ _c=c, _i=1 }, SectionAPI)
 end
 
--- addColumn: Skibid library:column() — creates side-by-side columns with horizontal flex.
--- First call lazy-creates a shared row frame. Each call adds a new column into it.
+-- addColumn: creates side-by-side scrollable columns.
+-- Each column is an independent ScrollingFrame so content can overflow and scroll.
 -- Usage:
 --   local left  = tab:addColumn()
 --   local right = tab:addColumn()
 --   left:addSection("Aimbot")
 --   right:addSection("Visuals")
 function TabAPI:addColumn()
+    -- Lazy-create the shared row that holds all columns side by side.
+    -- Fills the full tab height so each column's ScrollingFrame can use Size 1,0,1,0.
     if not self._colRow then
         self._colRow = create("Frame",{
             Parent=self._c,
             Name="column_row",
-            Size=dim2(1,0,0,0),
-            AutomaticSize=Enum.AutomaticSize.Y,
+            Size=dim2(1,0,1,0),
             BackgroundTransparency=1,
             BorderSizePixel=0,
             LayoutOrder=self._i,
@@ -2233,26 +2234,49 @@ function TabAPI:addColumn()
 
     self._colCount = self._colCount + 1
 
-    -- Skibid: column frame Size=dim2(0.5,-6,0,0), AutomaticSize=Y
-    local col = create("Frame",{
+    -- Each column is a ScrollingFrame so its sections can overflow and scroll.
+    local scroll = create("ScrollingFrame",{
         Parent=self._colRow,
         Name="column_"..self._colCount,
-        Size=dim2(0.5,-6,0,0),
-        AutomaticSize=Enum.AutomaticSize.Y,
+        Size=dim2(0.5,-4,1,0),
         BackgroundTransparency=1,
         BorderSizePixel=0,
         LayoutOrder=self._colCount,
+        ScrollBarImageColor3=themes.preset.accent,
+        ScrollBarThickness=2,
+        MidImage="rbxassetid://103468666327206",
+        TopImage="rbxassetid://103468666327206",
+        BottomImage="rbxassetid://103468666327206",
+        CanvasSize=dim2(0,0,0,0),
+        AutomaticCanvasSize=Enum.AutomaticSize.Y,
+        ClipsDescendants=true,
+        Active=true,
+        BackgroundColor3=rgb(255,255,255),
     })
-    -- Skibid: column UIListLayout Padding=dim(0,4), VerticalFlex=Fill
+    applyTheme(scroll,"accent","ScrollBarImageColor3")
+
+    -- Inner container that sections/elements parent into
+    local container = create("Frame",{
+        Parent=scroll,
+        Name="container",
+        Size=dim2(1,0,0,0),
+        AutomaticSize=Enum.AutomaticSize.Y,
+        BackgroundTransparency=1,
+        BorderSizePixel=0,
+    })
     create("UIListLayout",{
-        Parent=col,
+        Parent=container,
         Padding=dim(0,4),
         SortOrder=Enum.SortOrder.LayoutOrder,
-        VerticalFlex=Enum.UIFlexAlignment.Fill,
+        HorizontalAlignment=Enum.HorizontalAlignment.Center,
+    })
+    create("UIPadding",{
+        Parent=container,
+        PaddingTop=dim(0,5), PaddingBottom=dim(0,5),
+        PaddingLeft=dim(0,5), PaddingRight=dim(0,5),
     })
 
-    -- Return TabAPI-compatible so addSection works identically on columns
-    return setmetatable({ _c=col, _i=1 }, TabAPI)
+    return setmetatable({ _c=container, _i=1 }, TabAPI)
 end
 
 -- ── WindowAPI ────────────────────────────────────────────────────────────────
