@@ -384,44 +384,10 @@ local function _makeSection(parent, title, order)
     })
     applyTheme(bgGrad,"contrast","Color")
 
-    -- Elements area: grows with content but caps at MAX_H then scrolls.
-    -- Outer wrapper uses AutomaticSize.Y + UISizeConstraint so the section
-    -- shell stays compact for short sections and caps for long ones.
-    local MAX_H = 160
-
-    local elementsWrapper = create("Frame",{
-        Parent=secBg, Name="elements_wrapper",
-        Position=dim2(0,0,0,20), Size=dim2(1,0,0,0),
-        AutomaticSize=Enum.AutomaticSize.Y,
-        BackgroundTransparency=1, BorderSizePixel=0,
-    })
-    -- Cap the wrapper height so the section doesn't grow forever
-    local sizeConstraint = Instance.new("UISizeConstraint")
-    sizeConstraint.MaxSize = Vector2.new(math.huge, MAX_H)
-    sizeConstraint.Parent  = elementsWrapper
-
-    -- ScrollingFrame fills the wrapper; its canvas auto-expands with content
-    local elementsScroll = create("ScrollingFrame",{
-        Parent=elementsWrapper, Name="elements_scroll",
-        Size=dim2(1,0,1,0),
-        BackgroundTransparency=1, BorderSizePixel=0,
-        ScrollBarImageColor3=themes.preset.accent,
-        ScrollBarThickness=2,
-        MidImage="rbxassetid://103468666327206",
-        TopImage="rbxassetid://103468666327206",
-        BottomImage="rbxassetid://103468666327206",
-        CanvasSize=dim2(0,0,0,0),
-        AutomaticCanvasSize=Enum.AutomaticSize.Y,
-        ClipsDescendants=true,
-        Active=true,
-        BackgroundColor3=rgb(255,255,255),
-    })
-    applyTheme(elementsScroll,"accent","ScrollBarImageColor3")
-
-    -- Actual element container that components get parented into
+    -- Elements container starts 20px down (below title)
     local elements = create("Frame",{
-        Parent=elementsScroll, Name="elements",
-        Size=dim2(1,0,0,0),
+        Parent=secBg, Name="elements",
+        Position=dim2(0,0,0,20), Size=dim2(1,0,0,0),
         AutomaticSize=Enum.AutomaticSize.Y,
         BackgroundTransparency=1, BorderSizePixel=0,
     })
@@ -1852,7 +1818,7 @@ local function _makeScrollContent(parent)
     create("UIPadding",{ Parent=container,
         PaddingTop=dim(0,5), PaddingBottom=dim(0,5),
         PaddingLeft=dim(0,5), PaddingRight=dim(0,5) })
-    return content, container, content, scroll
+    return content, container
 end
 
 -- ── Players tab ───────────────────────────────────────────────────────────────
@@ -2235,28 +2201,20 @@ function TabAPI:addSection(title)
     return setmetatable({ _c=c, _i=1 }, SectionAPI)
 end
 
--- addColumn: creates side-by-side scrollable columns.
--- Each column is an independent ScrollingFrame so content can overflow and scroll.
+-- addColumn: Skibid library:column() — creates side-by-side columns with horizontal flex.
+-- First call lazy-creates a shared row frame. Each call adds a new column into it.
 -- Usage:
 --   local left  = tab:addColumn()
 --   local right = tab:addColumn()
 --   left:addSection("Aimbot")
 --   right:addSection("Visuals")
 function TabAPI:addColumn()
-    -- Lazy-create the shared row that holds all columns side by side.
-    -- Fills the full tab height so each column's ScrollingFrame can use Size 1,0,1,0.
     if not self._colRow then
-        -- The outer scroll sits on top at the same size and would eat all mouse input.
-        -- Disable it now that columns are providing their own per-column scrolling.
-        if self._outerScroll then
-            self._outerScroll.Visible = false
-            self._outerScroll.Active  = false
-        end
-        local colParent = self._content or self._c
         self._colRow = create("Frame",{
-            Parent=colParent,
+            Parent=self._c,
             Name="column_row",
-            Size=dim2(1,0,1,0),
+            Size=dim2(1,0,0,0),
+            AutomaticSize=Enum.AutomaticSize.Y,
             BackgroundTransparency=1,
             BorderSizePixel=0,
             LayoutOrder=self._i,
@@ -2275,49 +2233,26 @@ function TabAPI:addColumn()
 
     self._colCount = self._colCount + 1
 
-    -- Each column is a ScrollingFrame so its sections can overflow and scroll.
-    local scroll = create("ScrollingFrame",{
+    -- Skibid: column frame Size=dim2(0.5,-6,0,0), AutomaticSize=Y
+    local col = create("Frame",{
         Parent=self._colRow,
         Name="column_"..self._colCount,
-        Size=dim2(0.5,-4,1,0),
-        BackgroundTransparency=1,
-        BorderSizePixel=0,
-        LayoutOrder=self._colCount,
-        ScrollBarImageColor3=themes.preset.accent,
-        ScrollBarThickness=2,
-        MidImage="rbxassetid://103468666327206",
-        TopImage="rbxassetid://103468666327206",
-        BottomImage="rbxassetid://103468666327206",
-        CanvasSize=dim2(0,0,0,0),
-        AutomaticCanvasSize=Enum.AutomaticSize.Y,
-        ClipsDescendants=true,
-        Active=true,
-        BackgroundColor3=rgb(255,255,255),
-    })
-    applyTheme(scroll,"accent","ScrollBarImageColor3")
-
-    -- Inner container that sections/elements parent into
-    local container = create("Frame",{
-        Parent=scroll,
-        Name="container",
-        Size=dim2(1,0,0,0),
+        Size=dim2(0.5,-6,0,0),
         AutomaticSize=Enum.AutomaticSize.Y,
         BackgroundTransparency=1,
         BorderSizePixel=0,
+        LayoutOrder=self._colCount,
     })
+    -- Skibid: column UIListLayout Padding=dim(0,4), VerticalFlex=Fill
     create("UIListLayout",{
-        Parent=container,
+        Parent=col,
         Padding=dim(0,4),
         SortOrder=Enum.SortOrder.LayoutOrder,
-        HorizontalAlignment=Enum.HorizontalAlignment.Center,
-    })
-    create("UIPadding",{
-        Parent=container,
-        PaddingTop=dim(0,5), PaddingBottom=dim(0,5),
-        PaddingLeft=dim(0,5), PaddingRight=dim(0,5),
+        VerticalFlex=Enum.UIFlexAlignment.Fill,
     })
 
-    return setmetatable({ _c=container, _i=1, _content=nil }, TabAPI)
+    -- Return TabAPI-compatible so addSection works identically on columns
+    return setmetatable({ _c=col, _i=1 }, TabAPI)
 end
 
 -- ── WindowAPI ────────────────────────────────────────────────────────────────
@@ -2333,11 +2268,11 @@ function WindowAPI:_switchTab(name)
 end
 
 function WindowAPI:addTab(name)
-    local content, container, contentFrame, outerScroll
+    local content, container
     if name=="Players" then
         content = _buildPlayersTab(self._ch)
     else
-        content, container, contentFrame, outerScroll = _makeScrollContent(self._ch)
+        content, container = _makeScrollContent(self._ch)
     end
     local btn, ind = self._mkBtn(name, self._to)
     self._to = self._to + 1
@@ -2345,7 +2280,7 @@ function WindowAPI:addTab(name)
     btn.MouseButton1Click:Connect(function() self:_switchTab(name) end)
     if not self._firstTab then self._firstTab=name; self:_switchTab(name) end
     if name=="Players" then return nil end
-    return setmetatable({ _c=container, _i=1, _content=contentFrame, _outerScroll=outerScroll }, TabAPI)
+    return setmetatable({ _c=container, _i=1 }, TabAPI)
 end
 
 function WindowAPI:addThemeTab()
