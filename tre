@@ -1852,7 +1852,7 @@ local function _makeScrollContent(parent)
     create("UIPadding",{ Parent=container,
         PaddingTop=dim(0,5), PaddingBottom=dim(0,5),
         PaddingLeft=dim(0,5), PaddingRight=dim(0,5) })
-    return content, container, content
+    return content, container, content, scroll
 end
 
 -- ── Players tab ───────────────────────────────────────────────────────────────
@@ -2246,6 +2246,12 @@ function TabAPI:addColumn()
     -- Lazy-create the shared row that holds all columns side by side.
     -- Fills the full tab height so each column's ScrollingFrame can use Size 1,0,1,0.
     if not self._colRow then
+        -- The outer scroll sits on top at the same size and would eat all mouse input.
+        -- Disable it now that columns are providing their own per-column scrolling.
+        if self._outerScroll then
+            self._outerScroll.Visible = false
+            self._outerScroll.Active  = false
+        end
         local colParent = self._content or self._c
         self._colRow = create("Frame",{
             Parent=colParent,
@@ -2327,11 +2333,11 @@ function WindowAPI:_switchTab(name)
 end
 
 function WindowAPI:addTab(name)
-    local content, container, contentFrame
+    local content, container, contentFrame, outerScroll
     if name=="Players" then
         content = _buildPlayersTab(self._ch)
     else
-        content, container, contentFrame = _makeScrollContent(self._ch)
+        content, container, contentFrame, outerScroll = _makeScrollContent(self._ch)
     end
     local btn, ind = self._mkBtn(name, self._to)
     self._to = self._to + 1
@@ -2339,7 +2345,7 @@ function WindowAPI:addTab(name)
     btn.MouseButton1Click:Connect(function() self:_switchTab(name) end)
     if not self._firstTab then self._firstTab=name; self:_switchTab(name) end
     if name=="Players" then return nil end
-    return setmetatable({ _c=container, _i=1, _content=contentFrame }, TabAPI)
+    return setmetatable({ _c=container, _i=1, _content=contentFrame, _outerScroll=outerScroll }, TabAPI)
 end
 
 function WindowAPI:addThemeTab()
