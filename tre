@@ -384,10 +384,44 @@ local function _makeSection(parent, title, order)
     })
     applyTheme(bgGrad,"contrast","Color")
 
-    -- Elements container starts 20px down (below title)
-    local elements = create("Frame",{
-        Parent=secBg, Name="elements",
+    -- Elements area: grows with content but caps at MAX_H then scrolls.
+    -- Outer wrapper uses AutomaticSize.Y + UISizeConstraint so the section
+    -- shell stays compact for short sections and caps for long ones.
+    local MAX_H = 160
+
+    local elementsWrapper = create("Frame",{
+        Parent=secBg, Name="elements_wrapper",
         Position=dim2(0,0,0,20), Size=dim2(1,0,0,0),
+        AutomaticSize=Enum.AutomaticSize.Y,
+        BackgroundTransparency=1, BorderSizePixel=0,
+    })
+    -- Cap the wrapper height so the section doesn't grow forever
+    local sizeConstraint = Instance.new("UISizeConstraint")
+    sizeConstraint.MaxSize = Vector2.new(math.huge, MAX_H)
+    sizeConstraint.Parent  = elementsWrapper
+
+    -- ScrollingFrame fills the wrapper; its canvas auto-expands with content
+    local elementsScroll = create("ScrollingFrame",{
+        Parent=elementsWrapper, Name="elements_scroll",
+        Size=dim2(1,0,1,0),
+        BackgroundTransparency=1, BorderSizePixel=0,
+        ScrollBarImageColor3=themes.preset.accent,
+        ScrollBarThickness=2,
+        MidImage="rbxassetid://103468666327206",
+        TopImage="rbxassetid://103468666327206",
+        BottomImage="rbxassetid://103468666327206",
+        CanvasSize=dim2(0,0,0,0),
+        AutomaticCanvasSize=Enum.AutomaticSize.Y,
+        ClipsDescendants=true,
+        Active=true,
+        BackgroundColor3=rgb(255,255,255),
+    })
+    applyTheme(elementsScroll,"accent","ScrollBarImageColor3")
+
+    -- Actual element container that components get parented into
+    local elements = create("Frame",{
+        Parent=elementsScroll, Name="elements",
+        Size=dim2(1,0,0,0),
         AutomaticSize=Enum.AutomaticSize.Y,
         BackgroundTransparency=1, BorderSizePixel=0,
     })
