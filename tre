@@ -105,16 +105,22 @@ end
 local function _closeAllPopups()
     for frame, meta in pairs(_activePopups) do
         if frame and frame.Parent then
-            _closePopupAnimated(frame, meta.onClose)
+            if meta.animator then
+                meta.animator(frame, meta.onClose)
+            else
+                _closePopupAnimated(frame, meta.onClose)
+            end
         end
     end
     table.clear(_activePopups)
 end
 
-local function _registerPopup(frame, onClose)
+-- animator: optional function(frame, onDone) that replaces the default scale-close.
+-- Used by color pickers to fade instead of squish.
+local function _registerPopup(frame, onClose, animator)
     -- close everything else first (one popup at a time)
     _closeAllPopups()
-    _activePopups[frame] = { onClose = onClose }
+    _activePopups[frame] = { onClose = onClose, animator = animator }
 end
 
 local function _unregisterPopup(frame)
@@ -142,7 +148,11 @@ local function _ensurePopupListeners()
                 if not inside then
                     local meta = _activePopups[frame]
                     _activePopups[frame] = nil
-                    _closePopupAnimated(frame, meta and meta.onClose)
+                    if meta and meta.animator then
+                        meta.animator(frame, meta.onClose)
+                    else
+                        _closePopupAnimated(frame, meta and meta.onClose)
+                    end
                 end
             end
         end
@@ -1364,12 +1374,15 @@ _makeColorPickerBadge = function(right_components, default, callback)
     -- ── Floating popup (Skibid: 190×210, parented to ScreenGui) ──────────────
     local sg = _activeSG or CoreGui
 
-    local cpHolder = create("Frame",{
-        Parent=sg, Name="colorpicker",
-        Size=dim2(0,190,0,210), BorderSizePixel=0,
-        BackgroundColor3=themes.preset.outline,
-        Visible=false, ZIndex=10,
-    })
+    local cpHolder = Instance.new("CanvasGroup")
+    cpHolder.Name              = "colorpicker"
+    cpHolder.Parent            = sg
+    cpHolder.Size              = UDim2.new(0, 190, 0, 210)
+    cpHolder.BorderSizePixel   = 0
+    cpHolder.BackgroundColor3  = themes.preset.outline
+    cpHolder.Visible           = false
+    cpHolder.ZIndex            = 10
+    cpHolder.GroupTransparency = 0
     applyTheme(cpHolder,"outline","BackgroundColor3")
 
     local winInline = create("Frame",{
@@ -1668,27 +1681,38 @@ _makeColorPickerBadge = function(right_components, default, callback)
         end
     end)
 
+    -- Fade animator used by both manual close and the popup manager
+    local function cpFadeClose(frame, onDone)
+        tween(frame, { GroupTransparency = 1 }, 0.18)
+        task.delay(0.18, function()
+            if frame and frame.Parent then
+                frame.Visible = false
+                frame.GroupTransparency = 0
+            end
+            if onDone then onDone() end
+        end)
+    end
+
     -- open/close popup
     _ensurePopupListeners()
     cpBtn.MouseButton1Click:Connect(function()
         if open then
             open = false
             _unregisterPopup(cpHolder)
-            _closePopupAnimated(cpHolder)
+            cpFadeClose(cpHolder)
         else
             open = true
             cpHolder.Position = dim2(
                 0, cpBtn.AbsolutePosition.X + 1,
                 0, cpBtn.AbsolutePosition.Y + 17
             )
-            -- animate open: scale from 0 height
-            local fullSize = UDim2.new(0, 190, 0, 210)
-            cpHolder.Size = UDim2.new(0, 190, 0, 0)
+            cpHolder.GroupTransparency = 1
+            cpHolder.Size    = UDim2.new(0, 190, 0, 210)
             cpHolder.Visible = true
-            tween(cpHolder, { Size = fullSize }, 0.12)
+            tween(cpHolder, { GroupTransparency = 0 }, 0.18)
             _registerPopup(cpHolder, function()
                 open = false
-            end)
+            end, cpFadeClose)
         end
     end)
 
