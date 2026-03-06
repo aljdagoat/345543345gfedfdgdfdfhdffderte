@@ -2517,4 +2517,4 @@ function UILib.new(title)
 end
 
 return UILib
-warn()
+print("W")
