@@ -80,6 +80,15 @@ end
 -- Only one popup can be open at a time; clicking outside or pressing ESC closes all.
 local _activePopups = {}
 
+-- ── Tween helper ─────────────────────────────────────────────────────────────
+-- Defined here (before _closePopupAnimated) so it is in scope when called.
+local function tween(obj, props, t)
+    local tw = TweenService:Create(obj,
+        TweenInfo.new(t or 0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props)
+    tw:Play()
+    return tw
+end
+
 local function _closePopupAnimated(frame, onDone)
     if not frame or not frame.Parent then return end
     local origSize = frame.Size
@@ -152,14 +161,6 @@ local function safeCall(fn, ...)
     if type(fn) ~= "function" then return end
     local ok, err = pcall(fn, ...)
     if not ok then warn("[UILib] callback error:", err) end
-end
-
--- ── Tween helper ─────────────────────────────────────────────────────────────
-local function tween(obj, props, t)
-    local tw = TweenService:Create(obj,
-        TweenInfo.new(t or 0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props)
-    tw:Play()
-    return tw
 end
 
 -- ── Theme helpers ─────────────────────────────────────────────────────────────
@@ -1173,9 +1174,15 @@ local function _makeDropdown(parent, label, items, default, callback, order)
         else
             openState = true
             updateHolderPos()
-            floatHolder.Size = UDim2.new(0, floatHolder.Size.X.Offset, 0, 0)
+            local targetW = dropBtn.AbsoluteSize.X
+            floatHolder.Size    = UDim2.new(0, targetW, 0, 0)
             floatHolder.Visible = true
-            tween(floatHolder, { Size = UDim2.new(0, floatHolder.Size.X.Offset, 0, floatHolder.AbsoluteSize.Y + 200) }, 0.12)
+            -- Defer one frame so Roblox can compute the AutomaticSize content height
+            -- before we tween to it. Without defer, AbsoluteSize.Y is still 0.
+            task.defer(function()
+                local targetH = math.min(floatContrast.AbsoluteSize.Y + 8, 220)
+                tween(floatHolder, { Size = UDim2.new(0, targetW, 0, targetH) }, 0.12)
+            end)
             _registerPopup(floatHolder, function()
                 openState = false
                 plusLbl.Text = "+"
