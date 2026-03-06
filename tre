@@ -105,16 +105,22 @@ end
 local function _closeAllPopups()
     for frame, meta in pairs(_activePopups) do
         if frame and frame.Parent then
-            _closePopupAnimated(frame, meta.onClose)
+            if meta.animator then
+                meta.animator(frame, meta.onClose)
+            else
+                _closePopupAnimated(frame, meta.onClose)
+            end
         end
     end
     table.clear(_activePopups)
 end
 
-local function _registerPopup(frame, onClose)
+-- animator: optional function(frame, onDone) that replaces the default scale-close.
+-- Used by color pickers to fade instead of squish.
+local function _registerPopup(frame, onClose, animator)
     -- close everything else first (one popup at a time)
     _closeAllPopups()
-    _activePopups[frame] = { onClose = onClose }
+    _activePopups[frame] = { onClose = onClose, animator = animator }
 end
 
 local function _unregisterPopup(frame)
@@ -142,7 +148,11 @@ local function _ensurePopupListeners()
                 if not inside then
                     local meta = _activePopups[frame]
                     _activePopups[frame] = nil
-                    _closePopupAnimated(frame, meta and meta.onClose)
+                    if meta and meta.animator then
+                        meta.animator(frame, meta.onClose)
+                    else
+                        _closePopupAnimated(frame, meta and meta.onClose)
+                    end
                 end
             end
         end
@@ -374,10 +384,44 @@ local function _makeSection(parent, title, order)
     })
     applyTheme(bgGrad,"contrast","Color")
 
-    -- Elements container starts 20px down (below title)
-    local elements = create("Frame",{
-        Parent=secBg, Name="elements",
+    -- Elements area: grows with content but caps at MAX_H then scrolls.
+    -- Outer wrapper uses AutomaticSize.Y + UISizeConstraint so the section
+    -- shell stays compact for short sections and caps for long ones.
+    local MAX_H = 160
+
+    local elementsWrapper = create("Frame",{
+        Parent=secBg, Name="elements_wrapper",
         Position=dim2(0,0,0,20), Size=dim2(1,0,0,0),
+        AutomaticSize=Enum.AutomaticSize.Y,
+        BackgroundTransparency=1, BorderSizePixel=0,
+    })
+    -- Cap the wrapper height so the section doesn't grow forever
+    local sizeConstraint = Instance.new("UISizeConstraint")
+    sizeConstraint.MaxSize = Vector2.new(math.huge, MAX_H)
+    sizeConstraint.Parent  = elementsWrapper
+
+    -- ScrollingFrame fills the wrapper; its canvas auto-expands with content
+    local elementsScroll = create("ScrollingFrame",{
+        Parent=elementsWrapper, Name="elements_scroll",
+        Size=dim2(1,0,1,0),
+        BackgroundTransparency=1, BorderSizePixel=0,
+        ScrollBarImageColor3=themes.preset.accent,
+        ScrollBarThickness=2,
+        MidImage="rbxassetid://103468666327206",
+        TopImage="rbxassetid://103468666327206",
+        BottomImage="rbxassetid://103468666327206",
+        CanvasSize=dim2(0,0,0,0),
+        AutomaticCanvasSize=Enum.AutomaticSize.Y,
+        ClipsDescendants=true,
+        Active=true,
+        BackgroundColor3=rgb(255,255,255),
+    })
+    applyTheme(elementsScroll,"accent","ScrollBarImageColor3")
+
+    -- Actual element container that components get parented into
+    local elements = create("Frame",{
+        Parent=elementsScroll, Name="elements",
+        Size=dim2(1,0,0,0),
         AutomaticSize=Enum.AutomaticSize.Y,
         BackgroundTransparency=1, BorderSizePixel=0,
     })
@@ -1364,12 +1408,15 @@ _makeColorPickerBadge = function(right_components, default, callback)
     -- ── Floating popup (Skibid: 190×210, parented to ScreenGui) ──────────────
     local sg = _activeSG or CoreGui
 
-    local cpHolder = create("Frame",{
-        Parent=sg, Name="colorpicker",
-        Size=dim2(0,190,0,210), BorderSizePixel=0,
-        BackgroundColor3=themes.preset.outline,
-        Visible=false, ZIndex=10,
-    })
+    local cpHolder = Instance.new("CanvasGroup")
+    cpHolder.Name              = "colorpicker"
+    cpHolder.Parent            = sg
+    cpHolder.Size              = UDim2.new(0, 190, 0, 210)
+    cpHolder.BorderSizePixel   = 0
+    cpHolder.BackgroundColor3  = themes.preset.outline
+    cpHolder.Visible           = false
+    cpHolder.ZIndex            = 10
+    cpHolder.GroupTransparency = 0
     applyTheme(cpHolder,"outline","BackgroundColor3")
 
     local winInline = create("Frame",{
@@ -1668,27 +1715,38 @@ _makeColorPickerBadge = function(right_components, default, callback)
         end
     end)
 
+    -- Fade animator used by both manual close and the popup manager
+    local function cpFadeClose(frame, onDone)
+        tween(frame, { GroupTransparency = 1 }, 0.18)
+        task.delay(0.18, function()
+            if frame and frame.Parent then
+                frame.Visible = false
+                frame.GroupTransparency = 0
+            end
+            if onDone then onDone() end
+        end)
+    end
+
     -- open/close popup
     _ensurePopupListeners()
     cpBtn.MouseButton1Click:Connect(function()
         if open then
             open = false
             _unregisterPopup(cpHolder)
-            _closePopupAnimated(cpHolder)
+            cpFadeClose(cpHolder)
         else
             open = true
             cpHolder.Position = dim2(
                 0, cpBtn.AbsolutePosition.X + 1,
                 0, cpBtn.AbsolutePosition.Y + 17
             )
-            -- animate open: scale from 0 height
-            local fullSize = UDim2.new(0, 190, 0, 210)
-            cpHolder.Size = UDim2.new(0, 190, 0, 0)
+            cpHolder.GroupTransparency = 1
+            cpHolder.Size    = UDim2.new(0, 190, 0, 210)
             cpHolder.Visible = true
-            tween(cpHolder, { Size = fullSize }, 0.12)
+            tween(cpHolder, { GroupTransparency = 0 }, 0.18)
             _registerPopup(cpHolder, function()
                 open = false
-            end)
+            end, cpFadeClose)
         end
     end)
 
@@ -2177,20 +2235,21 @@ function TabAPI:addSection(title)
     return setmetatable({ _c=c, _i=1 }, SectionAPI)
 end
 
--- addColumn: Skibid library:column() — creates side-by-side columns with horizontal flex.
--- First call lazy-creates a shared row frame. Each call adds a new column into it.
+-- addColumn: creates side-by-side scrollable columns.
+-- Each column is an independent ScrollingFrame so content can overflow and scroll.
 -- Usage:
 --   local left  = tab:addColumn()
 --   local right = tab:addColumn()
 --   left:addSection("Aimbot")
 --   right:addSection("Visuals")
 function TabAPI:addColumn()
+    -- Lazy-create the shared row that holds all columns side by side.
+    -- Fills the full tab height so each column's ScrollingFrame can use Size 1,0,1,0.
     if not self._colRow then
         self._colRow = create("Frame",{
             Parent=self._c,
             Name="column_row",
-            Size=dim2(1,0,0,0),
-            AutomaticSize=Enum.AutomaticSize.Y,
+            Size=dim2(1,0,1,0),
             BackgroundTransparency=1,
             BorderSizePixel=0,
             LayoutOrder=self._i,
@@ -2209,26 +2268,49 @@ function TabAPI:addColumn()
 
     self._colCount = self._colCount + 1
 
-    -- Skibid: column frame Size=dim2(0.5,-6,0,0), AutomaticSize=Y
-    local col = create("Frame",{
+    -- Each column is a ScrollingFrame so its sections can overflow and scroll.
+    local scroll = create("ScrollingFrame",{
         Parent=self._colRow,
         Name="column_"..self._colCount,
-        Size=dim2(0.5,-6,0,0),
-        AutomaticSize=Enum.AutomaticSize.Y,
+        Size=dim2(0.5,-4,1,0),
         BackgroundTransparency=1,
         BorderSizePixel=0,
         LayoutOrder=self._colCount,
+        ScrollBarImageColor3=themes.preset.accent,
+        ScrollBarThickness=2,
+        MidImage="rbxassetid://103468666327206",
+        TopImage="rbxassetid://103468666327206",
+        BottomImage="rbxassetid://103468666327206",
+        CanvasSize=dim2(0,0,0,0),
+        AutomaticCanvasSize=Enum.AutomaticSize.Y,
+        ClipsDescendants=true,
+        Active=true,
+        BackgroundColor3=rgb(255,255,255),
     })
-    -- Skibid: column UIListLayout Padding=dim(0,4), VerticalFlex=Fill
+    applyTheme(scroll,"accent","ScrollBarImageColor3")
+
+    -- Inner container that sections/elements parent into
+    local container = create("Frame",{
+        Parent=scroll,
+        Name="container",
+        Size=dim2(1,0,0,0),
+        AutomaticSize=Enum.AutomaticSize.Y,
+        BackgroundTransparency=1,
+        BorderSizePixel=0,
+    })
     create("UIListLayout",{
-        Parent=col,
+        Parent=container,
         Padding=dim(0,4),
         SortOrder=Enum.SortOrder.LayoutOrder,
-        VerticalFlex=Enum.UIFlexAlignment.Fill,
+        HorizontalAlignment=Enum.HorizontalAlignment.Center,
+    })
+    create("UIPadding",{
+        Parent=container,
+        PaddingTop=dim(0,5), PaddingBottom=dim(0,5),
+        PaddingLeft=dim(0,5), PaddingRight=dim(0,5),
     })
 
-    -- Return TabAPI-compatible so addSection works identically on columns
-    return setmetatable({ _c=col, _i=1 }, TabAPI)
+    return setmetatable({ _c=container, _i=1 }, TabAPI)
 end
 
 -- ── WindowAPI ────────────────────────────────────────────────────────────────
