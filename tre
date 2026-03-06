@@ -80,15 +80,6 @@ end
 -- Only one popup can be open at a time; clicking outside or pressing ESC closes all.
 local _activePopups = {}
 
--- ── Tween helper ─────────────────────────────────────────────────────────────
--- Defined here (before _closePopupAnimated) so it is in scope when called.
-local function tween(obj, props, t)
-    local tw = TweenService:Create(obj,
-        TweenInfo.new(t or 0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props)
-    tw:Play()
-    return tw
-end
-
 local function _closePopupAnimated(frame, onDone)
     if not frame or not frame.Parent then return end
     local origSize = frame.Size
@@ -105,22 +96,16 @@ end
 local function _closeAllPopups()
     for frame, meta in pairs(_activePopups) do
         if frame and frame.Parent then
-            if meta.animator then
-                meta.animator(frame, meta.onClose)
-            else
-                _closePopupAnimated(frame, meta.onClose)
-            end
+            _closePopupAnimated(frame, meta.onClose)
         end
     end
     table.clear(_activePopups)
 end
 
--- animator: optional function(frame, onDone) that replaces the default scale-close.
--- Used by color pickers to fade instead of squish.
-local function _registerPopup(frame, onClose, animator)
+local function _registerPopup(frame, onClose)
     -- close everything else first (one popup at a time)
     _closeAllPopups()
-    _activePopups[frame] = { onClose = onClose, animator = animator }
+    _activePopups[frame] = { onClose = onClose }
 end
 
 local function _unregisterPopup(frame)
@@ -148,11 +133,7 @@ local function _ensurePopupListeners()
                 if not inside then
                     local meta = _activePopups[frame]
                     _activePopups[frame] = nil
-                    if meta and meta.animator then
-                        meta.animator(frame, meta.onClose)
-                    else
-                        _closePopupAnimated(frame, meta and meta.onClose)
-                    end
+                    _closePopupAnimated(frame, meta and meta.onClose)
                 end
             end
         end
@@ -171,6 +152,14 @@ local function safeCall(fn, ...)
     if type(fn) ~= "function" then return end
     local ok, err = pcall(fn, ...)
     if not ok then warn("[UILib] callback error:", err) end
+end
+
+-- ── Tween helper ─────────────────────────────────────────────────────────────
+local function tween(obj, props, t)
+    local tw = TweenService:Create(obj,
+        TweenInfo.new(t or 0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props)
+    tw:Play()
+    return tw
 end
 
 -- ── Theme helpers ─────────────────────────────────────────────────────────────
@@ -1184,15 +1173,9 @@ local function _makeDropdown(parent, label, items, default, callback, order)
         else
             openState = true
             updateHolderPos()
-            local targetW = dropBtn.AbsoluteSize.X
-            floatHolder.Size    = UDim2.new(0, targetW, 0, 0)
+            floatHolder.Size = UDim2.new(0, floatHolder.Size.X.Offset, 0, 0)
             floatHolder.Visible = true
-            -- Defer one frame so Roblox can compute the AutomaticSize content height
-            -- before we tween to it. Without defer, AbsoluteSize.Y is still 0.
-            task.defer(function()
-                local targetH = math.min(floatContrast.AbsoluteSize.Y + 8, 220)
-                tween(floatHolder, { Size = UDim2.new(0, targetW, 0, targetH) }, 0.12)
-            end)
+            tween(floatHolder, { Size = UDim2.new(0, floatHolder.Size.X.Offset, 0, floatHolder.AbsoluteSize.Y + 200) }, 0.12)
             _registerPopup(floatHolder, function()
                 openState = false
                 plusLbl.Text = "+"
@@ -1374,15 +1357,12 @@ _makeColorPickerBadge = function(right_components, default, callback)
     -- ── Floating popup (Skibid: 190×210, parented to ScreenGui) ──────────────
     local sg = _activeSG or CoreGui
 
-    local cpHolder = Instance.new("CanvasGroup")
-    cpHolder.Name              = "colorpicker"
-    cpHolder.Parent            = sg
-    cpHolder.Size              = UDim2.new(0, 190, 0, 210)
-    cpHolder.BorderSizePixel   = 0
-    cpHolder.BackgroundColor3  = themes.preset.outline
-    cpHolder.Visible           = false
-    cpHolder.ZIndex            = 10
-    cpHolder.GroupTransparency = 0
+    local cpHolder = create("Frame",{
+        Parent=sg, Name="colorpicker",
+        Size=dim2(0,190,0,210), BorderSizePixel=0,
+        BackgroundColor3=themes.preset.outline,
+        Visible=false, ZIndex=10,
+    })
     applyTheme(cpHolder,"outline","BackgroundColor3")
 
     local winInline = create("Frame",{
@@ -1681,38 +1661,27 @@ _makeColorPickerBadge = function(right_components, default, callback)
         end
     end)
 
-    -- Fade animator used by both manual close and the popup manager
-    local function cpFadeClose(frame, onDone)
-        tween(frame, { GroupTransparency = 1 }, 0.18)
-        task.delay(0.18, function()
-            if frame and frame.Parent then
-                frame.Visible = false
-                frame.GroupTransparency = 0
-            end
-            if onDone then onDone() end
-        end)
-    end
-
     -- open/close popup
     _ensurePopupListeners()
     cpBtn.MouseButton1Click:Connect(function()
         if open then
             open = false
             _unregisterPopup(cpHolder)
-            cpFadeClose(cpHolder)
+            _closePopupAnimated(cpHolder)
         else
             open = true
             cpHolder.Position = dim2(
                 0, cpBtn.AbsolutePosition.X + 1,
                 0, cpBtn.AbsolutePosition.Y + 17
             )
-            cpHolder.GroupTransparency = 1
-            cpHolder.Size    = UDim2.new(0, 190, 0, 210)
+            -- animate open: scale from 0 height
+            local fullSize = UDim2.new(0, 190, 0, 210)
+            cpHolder.Size = UDim2.new(0, 190, 0, 0)
             cpHolder.Visible = true
-            tween(cpHolder, { GroupTransparency = 0 }, 0.18)
+            tween(cpHolder, { Size = fullSize }, 0.12)
             _registerPopup(cpHolder, function()
                 open = false
-            end, cpFadeClose)
+            end)
         end
     end)
 
