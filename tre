@@ -1,7 +1,7 @@
 -- UILib.lua  ·  fully stabilised build  ·  Skibid visuals merge
 -- Usage:
 --   local UILib = loadstring(game:HttpGet("..."))()\
---   local win   = UILib.new("My Script")
+--   local win   = UILib.new("My dwadwadwa")
 --   local tab   = win:addTab("Combat")
 --   local sec   = tab:addSection("Settings")
 --   sec:addToggle("Enable",  false,              function(v) end)
@@ -46,7 +46,7 @@ local themes = {
     preset = {
         outline       = hex("#0A0A0A"),
         inline        = hex("#2D2D2D"),
-        accent        = hex("#6078BE"),
+        accent        = hex("#FFFFFF"),
         high_contrast = hex("#141414"),
         low_contrast  = hex("#1E1E1E"),
         text          = hex("#B4B4B4"),
