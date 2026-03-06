@@ -1818,7 +1818,7 @@ local function _makeScrollContent(parent)
     create("UIPadding",{ Parent=container,
         PaddingTop=dim(0,5), PaddingBottom=dim(0,5),
         PaddingLeft=dim(0,5), PaddingRight=dim(0,5) })
-    return content, container
+    return content, container, scroll
 end
 
 -- ── Players tab ───────────────────────────────────────────────────────────────
@@ -2214,7 +2214,7 @@ function TabAPI:addColumn()
             Parent=self._c,
             Name="column_row",
             Size=dim2(1,0,0,0),
-            AutomaticSize=Enum.AutomaticSize.Y,
+            AutomaticSize=Enum.AutomaticSize.None,
             BackgroundTransparency=1,
             BorderSizePixel=0,
             LayoutOrder=self._i,
@@ -2227,32 +2227,56 @@ function TabAPI:addColumn()
             Padding=dim(0,4),
             SortOrder=Enum.SortOrder.LayoutOrder,
         })
+        -- keep column_row height locked to the scroll viewport so columns fill the tab
+        if self._s then
+            local function syncH()
+                local h = self._s.AbsoluteSize.Y
+                if h > 0 then self._colRow.Size = dim2(1,0,0,h) end
+            end
+            syncH()
+            self._s:GetPropertyChangedSignal("AbsoluteSize"):Connect(syncH)
+        end
         self._i = self._i + 1
         self._colCount = 0
     end
 
     self._colCount = self._colCount + 1
 
-    -- Skibid: column frame Size=dim2(0.5,-6,0,0), AutomaticSize=Y
-    local col = create("Frame",{
+    -- Each column is its own ScrollingFrame so content scrolls independently
+    local colScroll = create("ScrollingFrame",{
         Parent=self._colRow,
         Name="column_"..self._colCount,
-        Size=dim2(0.5,-6,0,0),
+        Size=dim2(0.5,-6,1,0),
+        ScrollBarImageColor3=themes.preset.accent,
+        Active=true, AutomaticCanvasSize=Enum.AutomaticSize.Y,
+        ScrollBarThickness=2,
+        MidImage="rbxassetid://103468666327206",
+        TopImage="rbxassetid://103468666327206",
+        BottomImage="rbxassetid://103468666327206",
+        BackgroundTransparency=1,
+        BackgroundColor3=rgb(255,255,255),
+        BorderColor3=rgb(0,0,0), BorderSizePixel=0,
+        CanvasSize=dim2(0,0,0,0), ClipsDescendants=true,
+        LayoutOrder=self._colCount,
+    })
+    applyTheme(colScroll,"accent","ScrollBarImageColor3")
+
+    local col = create("Frame",{
+        Parent=colScroll,
+        Name="col_content",
+        Size=dim2(1,0,0,0),
         AutomaticSize=Enum.AutomaticSize.Y,
         BackgroundTransparency=1,
         BorderSizePixel=0,
-        LayoutOrder=self._colCount,
     })
-    -- Skibid: column UIListLayout Padding=dim(0,4), VerticalFlex=Fill
     create("UIListLayout",{
         Parent=col,
         Padding=dim(0,4),
         SortOrder=Enum.SortOrder.LayoutOrder,
-        VerticalFlex=Enum.UIFlexAlignment.Fill,
     })
 
-    -- Return TabAPI-compatible so addSection works identically on columns
-    return setmetatable({ _c=col, _i=1 }, TabAPI)
+    -- propagate _s so nested addSection calls and resize sync keep working
+    return setmetatable({ _c=col, _s=self._s, _i=1 }, TabAPI)
 end
 
 -- ── WindowAPI ────────────────────────────────────────────────────────────────
@@ -2268,11 +2292,11 @@ function WindowAPI:_switchTab(name)
 end
 
 function WindowAPI:addTab(name)
-    local content, container
+    local content, container, scroll
     if name=="Players" then
         content = _buildPlayersTab(self._ch)
     else
-        content, container = _makeScrollContent(self._ch)
+        content, container, scroll = _makeScrollContent(self._ch)
     end
     local btn, ind = self._mkBtn(name, self._to)
     self._to = self._to + 1
@@ -2280,7 +2304,7 @@ function WindowAPI:addTab(name)
     btn.MouseButton1Click:Connect(function() self:_switchTab(name) end)
     if not self._firstTab then self._firstTab=name; self:_switchTab(name) end
     if name=="Players" then return nil end
-    return setmetatable({ _c=container, _i=1 }, TabAPI)
+    return setmetatable({ _c=container, _s=scroll, _i=1 }, TabAPI)
 end
 
 function WindowAPI:addThemeTab()
